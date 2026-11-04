@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Audit trail") }}</h1><p class="muted">Scores, moderation, communications, decisions, access and configuration changes (latest 500).</p>
+<div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Actor</th><th>App</th><th>Detail</th></tr></thead><tbody>
+{% for e in rows %}<tr><td class="small">{{ e.at[:19]|replace("T"," ") }}</td><td>{{ e.action }}</td><td class="small">{{ e.actor_role or "" }} {{ e.actor_email or "" }}</td><td>{% if e.application_id %}<a href="/lead/app/{{ e.application_id }}">#{{ e.application_id }}</a>{% endif %}</td><td class="small" style="max-width:420px;word-break:break-word">{{ e.detail_json }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

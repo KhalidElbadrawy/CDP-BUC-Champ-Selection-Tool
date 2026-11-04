@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Entities") }}, focal points and coverage planning</h1>
+<p class="muted">Privileged roles (focal points, sponsors) are assigned here, centrally. Removing a contact revokes their links.</p>
+{% for e in entities %}<details class="card"><summary>{{ e.name_en }} <span class="small muted">({{ e.code }}) · target {{ e.target }} · {{ e.contacts|length }} contacts</span></summary>
+<p class="small">Nomination link: <code>{{ base_url }}/n/{{ e.slug }}</code></p>
+<form method="post" action="/lead/entities"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="update"><input type="hidden" name="entity_id" value="{{ e.id }}">
+<div class="grid g3">
+<div><label>Nomination target</label><input type="number" name="target" value="{{ e.target }}"></div>
+<div><label>Priority platforms (comma separated)</label><input type="text" name="priority_platforms" value="{{ e.priority_platforms or '' }}"></div>
+<div><label>Priority workflows</label><input type="text" name="workflows" value="{{ e.workflows or '' }}"></div>
+<div><label>User groups</label><input type="text" name="user_groups" value="{{ e.user_groups or '' }}"></div>
+<div><label>Locations</label><input type="text" name="locations" value="{{ e.locations or '' }}"></div>
+<div><label>Capacity needs</label><input type="text" name="capacity_needs" value="{{ e.capacity_needs or '' }}"></div></div>
+<label>Coverage gaps / notes</label><input type="text" name="coverage_notes" value="{{ e.coverage_notes or '' }}">
+<div class="actions"><button class="small">Save coverage plan</button></div></form>
+<h3>Contacts</h3><table>{% for c in e.contacts %}<tr><td>{{ c.name }}</td><td>{{ c.email }}</td><td>{{ "Focal point" if c.role=="focal" else "Sponsor" }}</td><td>{{ "active" if c.active else "removed" }}</td>
+<td>{% if c.active %}<form style="display:inline" method="post" action="/lead/entities"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="send_link"><input type="hidden" name="contact_id" value="{{ c.id }}"><button class="small secondary">Email dashboard link</button></form>
+<form style="display:inline" method="post" action="/lead/entities"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="deactivate_contact"><input type="hidden" name="contact_id" value="{{ c.id }}"><button class="small danger">Remove</button></form>{% endif %}</td></tr>{% endfor %}</table>
+<form method="post" action="/lead/entities" class="grid g4"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add_contact"><input type="hidden" name="entity_id" value="{{ e.id }}">
+<input type="text" name="name" placeholder="Name" required aria-label="Name"><input type="email" name="email" placeholder="Work email" required aria-label="Email">
+<select name="role" aria-label="Role"><option value="focal">Focal point</option><option value="sponsor">Sponsor</option></select><button class="small">Assign</button></form>
+</details>{% endfor %}
+<div class="card"><h2>Add entity</h2><form method="post" action="/lead/entities" class="grid g4"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add">
+<div><label>Code</label><input type="text" name="code" required></div><div><label>Name (English)</label><input type="text" name="name_en" required></div>
+<div><label>Name (Arabic)</label><input type="text" name="name_ar" dir="rtl"></div><div><label>Target</label><input type="number" name="target" value="2"></div>
+<div><label>Priority platforms</label><input type="text" name="priority_platforms"></div><div><label>&nbsp;</label><button>Add entity</button></div></form></div>
+{% endblock %}

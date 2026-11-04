@@ -1,0 +1,28 @@
+{% macro status_pill(s) -%}
+{%- set cls = {"Confirmed":"ok","Provisionally Appointed":"ok","Onboarding":"ok","Awaiting Day-90 Review":"info","Withdrawn":"bad","Not Selected":"bad","Appointment Concluded":"bad","Reassessment Required":"warn","Awaiting Evidence":"warn","Assessment Complete":"info"}.get(s, "") -%}
+<span class="pill {{ cls }}">{{ _(s) }}</span>
+{%- endmacro %}
+{% macro outcome_pill(o) -%}
+{%- if o -%}{%- set cls = "ok" if o.startswith("Meets") else ("bad" if o.startswith("Does not") else "warn") -%}<span class="pill {{ cls }}">{{ o }}</span>{%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}
+{% macro next_cell(n) -%}
+{{ n.action }}<br><span class="small muted">{{ n.owner }}</span>{% if n.due %}<br><span class="small {{ 'overdue' if n.overdue }}">{{ _("Due") }}: {{ n.due }}{% if n.overdue %} · {{ _("Overdue") }}{% endif %}</span>{% endif %}
+{%- endmacro %}
+{% macro mode_pill(mode) -%}
+{% if mode == "demo" %}<span class="pill sim">{{ _("SIMULATED") }} — demo assessor</span>{% else %}<span class="pill info">{{ _("AI-generated") }} — live</span>{% endif %}
+{%- endmacro %}
+{% macro score_table(result, show_reason=False, moderation=None) %}
+<div class="table-wrap"><table>
+<thead><tr><th>Criterion</th><th>Weight</th><th>Rating</th><th>Weighted points</th><th>Minimum</th>{% if moderation %}<th>Moderation</th>{% endif %}</tr></thead>
+<tbody>
+{% for c in result.criteria %}
+<tr><td>{{ c.name }}</td><td>{{ c.weight|round(0)|int }}%</td>
+<td>{% if c.rating is none %}<span class="pill warn">Not yet assessed</span>{% else %}{{ c.rating }}/5{% if c.rating_basis %} <span class="small muted">({{ c.rating_basis }})</span>{% endif %}{% endif %}</td>
+<td>{{ c.points if c.points is not none else "—" }}</td>
+<td>{% if c.minimum %}{{ c.minimum }}/5 {% if c.key in result.minimum_failures %}<span class="pill bad">below minimum</span>{% elif c.rating is not none %}<span class="pill ok">met</span>{% endif %}{% else %}—{% endif %}</td>
+{% if moderation %}{% set m = moderation.criteria[c.key] %}<td class="small">A: {{ m.pass_a if m.pass_a is not none else "n/a" }} · B: {{ m.pass_b if m.pass_b is not none else "n/a" }} → <strong>{{ m.resolution }}</strong>{% if show_reason %}<br>{{ m.justification }}{% endif %}</td>{% endif %}
+</tr>
+{% endfor %}
+</tbody></table></div>
+<p><strong>Score:</strong> {{ result.score_text }} · <strong>Threshold:</strong> {{ result.threshold|int }}/100 ({{ "met" if result.threshold_met else "not met" }}) · <strong>Evidence coverage:</strong> {{ result.evidence_coverage }}</p>
+{% endmacro %}

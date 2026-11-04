@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
+<h1>{{ _("Manager commitment") }}</h1>
+<div class="card"><p><strong>{{ a.nominee_name }}</strong> ({{ a.department }}, {{ a.entity_name }}) is progressing as a CDP Business User Champion for <strong>{{ a.platform }}</strong> — {{ a.workflow }}.</p>
+<p>{{ m.status_pill(a.status) }} · {{ m.next_cell(next) }}</p>
+<h2>Role requirements</h2><ul>
+<li>Protected time, typically 4–8 hours a month, for coaching colleagues and champion check-ins.</li>
+<li>Workload adjusted so champion activity is not additional unpaid work.</li>
+<li>Platform access the champion needs to demonstrate approved tasks.</li>
+<li>Champions support, explain and refer; they do not override controls or replace the service desk.</li></ul>
+<p class="small muted">You can see the role requirements and this form only. The nominee's CV and assessment evidence are not shared with you.</p></div>
+
+{% if a.status == "Awaiting Manager Commitment" %}
+<div class="card"><h2>Capacity commitment</h2>
+{% if mc %}<div class="notice">You submitted a commitment on {{ mc.submitted_at[:10] }}{% if not mc.access_confirmed %} — <strong>required access is not yet confirmed</strong>. Update the form when access is in place{% endif %}.</div>{% endif %}
+<form method="post" action="/manager/commit"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="ph">{{ _("Protected hours per month") }} *</label><input id="ph" type="number" min="1" max="40" step="0.5" name="protected_hours" value="{{ mc.protected_hours if mc else (a.proposed_hours or '') }}" required>
+<p class="hint">The nominee proposed {{ a.proposed_hours or "—" }} hours; availability: {{ a.availability or "—" }}.</p>
+<label for="wl">{{ _("Workload arrangements") }} *</label><textarea id="wl" name="workload" required>{{ mc.workload if mc else "" }}</textarea>
+<label for="av">{{ _("Availability") }} *</label><input id="av" type="text" name="availability" value="{{ mc.availability if mc else (a.availability or '') }}" required>
+<label class="radio"><input type="checkbox" name="access_confirmed" value="1" {{ "checked" if mc and mc.access_confirmed }}> {{ _("Required access confirmed") }} for {{ a.platform }}</label>
+<label for="aa">{{ _("Outstanding access actions") }}</label><textarea id="aa" name="access_actions" style="min-height:70px">{{ mc.access_actions if mc else "" }}</textarea>
+<div class="actions"><button>{{ _("Confirm commitment") }}</button></div></form></div>
+{% elif a.status == "Awaiting Day-90 Review" %}
+<div class="card"><h2>{{ _("Day-90 review") }} — manager input</h2>
+{% if review and review.manager_json %}<p><span class="pill ok">Submitted</span> Thank you.</p>{% else %}{% set day90_action = "/manager/day90" %}{% include "_day90_form.html" %}{% endif %}</div>
+{% else %}
+<div class="card"><p>No action is needed from you at this stage. Thank you.</p></div>{% endif %}
+{% endblock %}

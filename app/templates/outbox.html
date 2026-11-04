@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Outbox") }}</h1><p class="muted">Every message with its delivery status. In demo mode messages are logged here instead of being sent.</p>
+<div class="table-wrap"><table><thead><tr><th>When</th><th>To</th><th>Ref</th><th>Template</th><th>Status</th><th>Message</th></tr></thead><tbody>
+{% for e in mails %}<tr><td class="small">{{ e.created_at[:16]|replace("T"," ") }}</td><td class="small">{{ e.to_email }}</td><td>{{ e.ref or "—" }}</td><td>{{ e.template }}{{ " (reminder)" if e.is_reminder }}</td><td>{{ e.status }}<br><span class="small muted">{{ e.error or "" }}</span></td>
+<td><details><summary>{{ e.subject }}</summary><pre class="mail">{{ e.body }}</pre></details></td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

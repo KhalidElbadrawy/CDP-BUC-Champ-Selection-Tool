@@ -1,0 +1,5 @@
+{% set stages = [("Consent",["Nominated","Awaiting Consent"]),("Application",["Application in Progress"]),("Assessment",["Submitted","Automated Assessment in Progress","Awaiting Evidence","Reassessment Required","Assessment Complete"]),("Capacity",["Awaiting Manager Commitment"]),("Sponsor decision",["Awaiting Sponsor Decision"]),("Acceptance & onboarding",["Provisionally Appointed","Onboarding"]),("Day-90 review",["Awaiting Day-90 Review","Confirmed","Appointment Concluded"])] %}
+{% set ns = namespace(idx=-1) %}{% for name, sts in stages %}{% if a.status in sts %}{% set ns.idx = loop.index0 %}{% endif %}{% endfor %}
+<ol class="steps" aria-label="{{ _('Application progress') }}">
+{% for name, sts in stages %}<li class="{{ 'now' if loop.index0==ns.idx else ('done' if loop.index0 < ns.idx else '') }}" {% if loop.index0==ns.idx %}aria-current="step"{% endif %}>{{ loop.index }}. {{ name }}</li>{% endfor %}
+</ol>

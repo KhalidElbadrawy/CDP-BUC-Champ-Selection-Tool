@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
+<h1>{{ _("Central dashboard") }}</h1>
+<div class="grid g4">
+<div class="stat"><div class="n">{{ total }}</div><div class="l">Nominations, all entities</div></div>
+<div class="stat"><div class="n">{{ by_outcome.get(scoring.OUTCOME_MEETS, 0) }}</div><div class="l">Meet proposed thresholds</div></div>
+<div class="stat"><div class="n">{{ by_status["Provisionally Appointed"] + by_status["Onboarding"] + by_status["Awaiting Day-90 Review"] + by_status["Confirmed"] }}</div><div class="l">Appointed (provisional + confirmed)</div></div>
+<div class="stat"><div class="n {{ 'overdue' if overdue }}">{{ overdue|length }}</div><div class="l">Overdue actions</div></div>
+<div class="stat"><div class="n">{{ "%.1f"|format(evidence_avg) if evidence_avg is not none else "—" }}/6</div><div class="l">Avg. criteria with evidence</div></div>
+</div>
+<div class="actions">
+<a class="btn secondary" href="/lead/export.csv">{{ _("Export register (CSV)") }}</a>
+<form method="post" action="/lead/jobs"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary" title="Retry failed assessments, send due reminders, apply retention">Run scheduled jobs now</button></form>
+</div>
+{% if failures %}<div class="warnbox"><strong>Service issues:</strong> {% for a in failures %}<a href="/lead/app/{{ a.id }}">{{ a.ref }}</a> — {{ a.last_error }}<br>{% endfor %}</div>{% endif %}
+{% if reconsider %}<div class="notice"><strong>Reconsideration requests:</strong> {% for a in reconsider %}<a href="/lead/app/{{ a.id }}">{{ a.ref }} {{ a.nominee_name }}</a>{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
+
+<div class="card"><h2>{{ _("Coverage") }} and progress by entity</h2>
+<div class="table-wrap"><table><thead><tr><th>Entity</th><th>Target</th><th>Nominated</th><th>Submitted</th><th>Assessed</th><th>Meets thresholds</th><th>Appointed</th><th>Coverage</th><th>Platform gaps</th></tr></thead><tbody>
+{% for e in entities %}<tr><td><a href="/lead?entity={{ e.id }}">{{ e.name_en }}</a></td><td>{{ e.target }}</td><td>{{ e.nominations }}</td><td>{{ e.submitted }}</td><td>{{ e.assessed }}</td><td>{{ e.meets }}</td><td>{{ e.coverage.appointed }}</td>
+<td style="min-width:110px"><div class="bar"><span style="width:{{ [e.coverage.pct,100]|min }}%"></span></div><span class="small">{{ e.coverage.pct }}%</span></td><td class="small">{{ e.coverage.gaps|join(", ") or "—" }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="small muted">Coverage counts appointed champions against configured targets. It is tracked separately from assessment quality.</p></div>
+
+<div class="grid g3">
+<div class="card"><h3>Applications by stage</h3><table>{% for s, n in by_status.items() if n %}<tr><td><a href="/lead?status={{ s|urlencode }}">{{ s }}</a></td><td>{{ n }}</td></tr>{% endfor %}</table></div>
+<div class="card"><h3>By nomination route</h3><table>{% for r, n in by_route.items() %}<tr><td>{{ r }}</td><td>{{ n }}</td></tr>{% endfor %}</table>
+<h3>Assessment results</h3><table>{% for o, n in by_outcome.items() %}<tr><td>{{ o }}</td><td>{{ n }}</td></tr>{% else %}<tr><td>None yet</td></tr>{% endfor %}</table></div>
+<div class="card"><h3>Upcoming day-90 reviews (30 days)</h3><table>{% for d in day90 %}<tr><td><a href="/lead/app/{{ d.id }}">{{ d.nominee_name }}</a><br><span class="small muted">{{ d.entity_name }}</span></td><td class="{{ 'overdue' if d.day90_date < today }}">{{ d.day90_date }}</td></tr>{% else %}<tr><td>None</td></tr>{% endfor %}</table></div>
+</div>
+
+<div class="card"><h2>Outstanding actions (nominee, manager, sponsor, programme)</h2>
+<div class="table-wrap"><table><thead><tr><th>Ref</th><th>Entity</th><th>Nominee</th><th>Status</th><th>Next action</th></tr></thead><tbody>
+{% for a in outstanding %}<tr><td><a href="/lead/app/{{ a.id }}">{{ a.ref }}</a></td><td>{{ a.entity_name }}</td><td>{{ a.nominee_name }}</td><td>{{ m.status_pill(a.status) }}</td><td>{{ m.next_cell(a.next) }}</td></tr>{% else %}<tr><td colspan="5">None.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="card"><h2>All applications</h2>
+<form method="get" class="grid g3"><div><label for="fe">Entity</label><select id="fe" name="entity"><option value="">All</option>{% for e in entities %}<option value="{{ e.id }}" {{ "selected" if fe == e.id|string }}>{{ e.name_en }}</option>{% endfor %}</select></div>
+<div><label for="fs">Status</label><select id="fs" name="status"><option value="">All</option>{% for s in statuses %}<option {{ "selected" if fs == s }}>{{ s }}</option>{% endfor %}</select></div><div><label>&nbsp;</label><button>Filter</button></div></form>
+<div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Ref</th><th>Entity</th><th>Nominee</th><th>Route</th><th>Platform</th><th>Status</th><th>Outcome</th><th>Next action</th></tr></thead><tbody>
+{% for a in apps %}<tr><td><a href="/lead/app/{{ a.id }}">{{ a.ref }}</a>{% if duplicates.get(a.id) %}<br><span class="pill warn">{{ duplicates[a.id] }} nominations</span>{% endif %}</td><td>{{ a.entity_name }}</td><td>{{ a.nominee_name }}<br><span class="small muted">{{ a.department }}</span></td><td>{{ a.route }}</td><td>{{ a.platform }}</td><td>{{ m.status_pill(a.status) }}</td><td>{{ m.outcome_pill(a.outcome) }}</td><td>{{ m.next_cell(a.next) }}</td></tr>
+{% else %}<tr><td colspan="8">No applications.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

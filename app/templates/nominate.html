@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Become a CDP Business User Champion") }} — {{ entity.name_ar if lang=="ar" and entity.name_ar else entity.name_en }}</h1>
+{% include "_role.html" %}
+{% if not round %}<div class="flash err">Nominations are not currently open.</div>{% else %}
+<div class="card"><h2>{{ _("Nominate") }}</h2>
+<p class="hint">{{ _("Fields marked * are required. The nominee will be asked for consent by email before any CV is collected or any assessment takes place.") }}</p>
+{% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+<form method="post">
+<fieldset><legend>{{ _("Nomination route") }} *</legend>
+{% for v, l in [("self","Self-nomination"),("peer","Peer nomination"),("manager","Manager nomination")] %}
+<label class="radio"><input type="radio" name="route" value="{{ v }}" {{ "checked" if form.route==v or (not form.route and v=="self") }} required> {{ _(l) }}</label>{% endfor %}
+</fieldset>
+<div class="grid g2">
+<div><label for="nn">{{ _("Nominee name") }} *</label><input id="nn" name="nominee_name" type="text" value="{{ form.nominee_name }}" required></div>
+<div><label for="ne">{{ _("Nominee work email") }} *</label><input id="ne" name="nominee_email" type="email" value="{{ form.nominee_email }}" required></div>
+<div><label>{{ _("Entity") }}</label><input type="text" value="{{ entity.name_en }}" disabled></div>
+<div><label for="dp">{{ _("Department") }} *</label><input id="dp" name="department" type="text" value="{{ form.department }}" required></div>
+<div><label for="bf">{{ _("Business function") }}</label><input id="bf" name="business_function" type="text" value="{{ form.business_function }}"></div>
+<div><label for="lc">{{ _("Location") }}</label><input id="lc" name="location" type="text" value="{{ form.location }}"></div>
+<div><label for="pl">{{ _("Relevant platform") }} *</label><input id="pl" name="platform" type="text" list="plats" value="{{ form.platform }}" required>
+<datalist id="plats">{% for p in (entity.priority_platforms or "").split(",") if p.strip() %}<option value="{{ p.strip() }}">{% endfor %}</datalist></div>
+<div><label for="wf">{{ _("Business workflow") }} *</label><input id="wf" name="workflow" type="text" value="{{ form.workflow }}" required></div>
+<div><label for="mn">{{ _("Line-manager name") }} *</label><input id="mn" name="manager_name" type="text" value="{{ form.manager_name }}" required></div>
+<div><label for="me">{{ _("Line-manager work email") }} *</label><input id="me" name="manager_email" type="email" value="{{ form.manager_email }}" required></div>
+</div>
+<fieldset><legend>{{ _("Nominator details (peer or manager nominations)") }}</legend>
+<div class="grid g3">
+<div><label for="nrn">{{ _("Your name") }}</label><input id="nrn" name="nominator_name" type="text" value="{{ form.nominator_name }}"></div>
+<div><label for="nre">{{ _("Your work email") }}</label><input id="nre" name="nominator_email" type="email" value="{{ form.nominator_email }}"></div>
+<div><label for="nrr">{{ _("Relationship to nominee") }}</label><input id="nrr" name="nominator_relationship" type="text" value="{{ form.nominator_relationship }}"></div>
+</div></fieldset>
+<label for="rs">{{ _("Brief reason for nomination") }} *</label>
+<textarea id="rs" name="reason" maxlength="1200" required>{{ form.reason }}</textarea>
+<div class="actions"><button>{{ _("Submit nomination") }}</button></div>
+</form></div>{% endif %}
+{% endblock %}

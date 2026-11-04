@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Become a CDP Business User Champion") }}</h1>
+{% include "_role.html" %}
+<div class="grid g2">
+<div class="card"><h2>How to nominate</h2><p>Each participating entity circulates its own nomination link by email. Open the link from your entity's email to nominate yourself or a colleague.</p></div>
+<div class="card"><h2>{{ _("Request a fresh access link") }}</h2><p>Already nominated, or a manager, sponsor or focal point? Get a new secure link by email.</p><a class="btn" href="/access">{{ _("Request a fresh access link") }}</a></div>
+</div>
+{% if demo_launcher %}<div class="warnbox"><strong>Demo:</strong> open the <a href="/demo">demo launcher</a> to enter any role with fictional records.</div>{% endif %}
+{% endblock %}

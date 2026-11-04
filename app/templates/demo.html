@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block content %}
+<h1>Demo launcher</h1>
+<div class="warnbox">Only available in demo mode (no SMTP configured). It issues a fresh role-scoped link, standing in for opening one from an email. All records are fictional.</div>
+<div class="card"><h2>CDP Change Lead</h2><a class="btn" href="/demo/enter?role=lead">Open central dashboard</a></div>
+<div class="card"><h2>Entity focal points and sponsors</h2><div class="table-wrap"><table><thead><tr><th>Entity</th><th>Contacts</th><th>Shared nomination link</th></tr></thead><tbody>
+{% for e in entities %}<tr><td>{{ e.name_en }}</td><td>{% for c in e.contacts %}<a href="/demo/enter?role={{ c.role }}&id={{ c.id }}">{{ c.name }} ({{ "focal point" if c.role=="focal" else "sponsor" }})</a><br>{% endfor %}</td><td><a href="/n/{{ e.slug }}">/n/{{ e.slug }}</a></td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="card"><h2>Nominees and line managers</h2><div class="table-wrap"><table><thead><tr><th>Ref</th><th>Entity</th><th>Nominee</th><th>Status</th><th>Manager</th></tr></thead><tbody>
+{% for a in apps %}<tr><td>{{ a.ref }}</td><td>{{ a.entity_name }}</td><td><a href="/demo/enter?role=nominee&id={{ a.id }}">{{ a.nominee_name }}</a></td><td>{{ a.status }}</td><td>{% if a.manager_name %}<a href="/demo/enter?role=manager&id={{ a.id }}">{{ a.manager_name }}</a>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

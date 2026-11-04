@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
+<h1>Individual assessment report — {{ a.nominee_name }} ({{ a.ref }})</h1>
+<p>{{ a.entity_name }} · {{ a.department }} · {{ a.platform }} / {{ a.workflow }} · Status: {{ a.status }}</p>
+<div class="notice">This report is AI-generated{% if assessments and assessments[0].mode == "demo" %} — <strong>SIMULATED by the demo assessor, not a live assessment</strong>{% endif %}. Agreement between the two blinded assessment passes indicates scoring consistency; it does not independently verify CV claims. Weights and thresholds are proposed settings requiring pilot validation.</div>
+{% set assessments = assessments[:1] %}{% include "_assessment_detail.html" %}
+<h2>Appointment requirements</h2><ul>{% for r in reqs %}<li>{{ "Met" if r.met else "Outstanding" }} — {{ r.label }}</li>{% endfor %}</ul>
+{% if clarifications %}<h2>Outstanding evidence or remediation</h2><ul>{% for c in clarifications if not c.response %}<li>{{ c.kind }} ({{ c.criterion }}): {{ c.question }}</li>{% else %}<li>None outstanding</li>{% endfor %}</ul>{% endif %}
+<p class="actions"><button onclick="window.print()">Print / save as PDF</button></p>
+{% endblock %}

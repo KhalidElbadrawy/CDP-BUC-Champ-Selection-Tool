@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block content %}
+<h1>{{ _("Email templates") }}</h1>
+<p class="muted">Placeholders: {nominee_name} {entity} {ref} {manager_name} {recipient_name} {link} {expires} {due}. Keep personal information minimal; never include CV or assessment details. Templates marked “focal points may trigger” are the approved reminders.</p>
+{% for r in rows %}<details class="card"><summary>{{ r.key }} — {{ r.subject_en }} {% if r.focal_may_send %}<span class="pill info">focal points may trigger</span>{% endif %}</summary>
+<form method="post" action="/lead/templates"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="key" value="{{ r.key }}">
+<label>Subject</label><input type="text" name="subject_en" value="{{ r.subject_en }}"><label>Body</label><textarea name="body_en" style="min-height:160px">{{ r.body_en }}</textarea>
+<label class="radio"><input type="checkbox" name="focal_may_send" value="1" {{ "checked" if r.focal_may_send }}> Focal points may trigger this as an approved reminder</label>
+<div class="actions"><button class="small">Save template</button></div></form>
+<h3>Preview</h3><pre class="mail"><strong>{{ r.preview_subject }}</strong>
+
+{{ r.preview_body }}</pre></details>{% endfor %}
+{% endblock %}

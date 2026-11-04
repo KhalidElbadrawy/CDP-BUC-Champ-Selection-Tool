@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
+<h1>{{ _("Entity dashboard") }} — {{ entity.name_en }}</h1>
+<div class="grid g4">
+<div class="stat"><div class="n">{{ coverage.target }}</div><div class="l">{{ _("Target") }} champions</div></div>
+<div class="stat"><div class="n">{{ apps|length }}</div><div class="l">{{ _("Nominations") }}</div></div>
+<div class="stat"><div class="n">{{ apps|selectattr("submitted_at")|list|length }}</div><div class="l">{{ _("Submitted") }}</div></div>
+<div class="stat"><div class="n">{{ coverage.appointed }}</div><div class="l">Appointed ({{ coverage.pct }}% of target)</div></div>
+</div>
+<div class="card"><h2>Share the nomination link</h2>
+<p>Circulate this link by email. It opens the role description and nomination form only; it does not show existing nominations.</p>
+<p><input type="text" readonly value="{{ nomination_link }}" aria-label="Nomination link" onclick="this.select()"></p>
+<details><summary>Send the role announcement by email</summary>
+<form method="post" action="/entity/announce"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="rc">Recipient emails (comma or line separated)</label><textarea id="rc" name="recipients"></textarea>
+<div class="actions"><button>Send announcement</button></div></form></details>
+<p class="small muted">Coverage gaps: {{ coverage.gaps|join(", ") or "none" }}.</p></div>
+
+<div class="card"><h2>{{ _("Nominations") }}</h2>
+<div class="actions" style="margin-top:0"><a class="btn secondary small" href="/entity/export.csv">{{ _("Export register (CSV)") }}</a></div>
+<div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Nominee</th><th>Department</th><th>Platform / workflow</th><th>{{ _("Status") }}</th><th>Outcome summary</th><th>{{ _("Next action") }}</th><th></th></tr></thead><tbody>
+{% for a in apps %}<tr><td>{{ a.nominee_name }}<br><span class="small muted">{{ a.ref }} · {{ a.route }}</span></td><td>{{ a.department }}</td><td>{{ a.platform }}<br><span class="small muted">{{ a.workflow }}</span></td>
+<td>{{ m.status_pill(a.status) }}</td><td>{{ m.outcome_pill(a.outcome) }}</td><td>{{ m.next_cell(a.next) }}</td>
+<td>{% if a.reminder_template %}<form method="post" action="/entity/remind/{{ a.id }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+<button class="small" {{ "disabled" if a.block }} title="{{ a.block or '' }}">{{ _("Send reminder") if a.status != "Nominated" else _("Resend link") }}</button></form>{% if a.block %}<span class="small muted">{{ a.block }}</span>{% endif %}{% endif %}
+{% if a.last_error %}<div class="small overdue">{{ a.last_error }}</div>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">No nominations yet.</td></tr>{% endfor %}</tbody></table></div>
+<p class="small muted">Focal points see outcome summaries only. CVs, detailed evidence and AI ratings are restricted to nominees and authorised central staff, and cannot be changed here.</p></div>
+
+<div class="card"><h2>Reminder and email history</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Nominee</th><th>Message</th><th>Delivery</th><th>Triggered by</th></tr></thead><tbody>
+{% for h in history %}<tr><td>{{ h.created_at[:16]|replace("T"," ") }}</td><td>{{ h.nominee_name or "—" }}</td><td>{{ h.template }}{% if h.is_reminder %} <span class="pill">reminder</span>{% endif %}</td><td>{{ h.status }}{% if h.error %}<br><span class="small muted">{{ h.error }}</span>{% endif %}</td><td class="small">{{ h.triggered_by }}</td></tr>
+{% else %}<tr><td colspan="5">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

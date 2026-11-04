@@ -1,0 +1,15 @@
+{% for s in assessments %}
+<div class="card"><h2>Assessment #{{ s.id }} {{ m.mode_pill(s.mode) }} <span class="small muted">round {{ s.round_no }} · evidence v{{ s.evidence_version }} · config v{{ s.config_version }} · {{ s.status }} · {{ s.created_at[:16]|replace("T"," ") }}</span></h2>
+{% if s.error %}<div class="flash err">{{ s.error }}</div>{% endif %}
+{% if s.result %}<p>{{ m.outcome_pill(s.result.final_outcome or s.result.outcome) }} {{ s.result.summary }}</p>
+{{ m.score_table(s.result, True, s.moderation) }}{% endif %}
+{% if s.pass_a %}<details><summary>Blinded pass A and pass B — criterion-level ratings, excerpts and reasoning</summary>
+{% for c in scoring.CRITERIA %}{% set pa = s.pass_a.criteria[c.key] %}{% set pb = s.pass_b.criteria[c.key] %}
+<h3>{{ c.name }}</h3><div class="cols">
+{% for label, p in [("Pass A", pa), ("Pass B", pb)] %}<div class="notice"><strong>{{ label }}: {{ p.rating if p.rating is not none else "Not yet assessed" }}</strong>{% if p.rating_basis %} ({{ p.rating_basis }}){% endif %} · strength: {{ p.evidence_strength }}
+<br>{{ p.reasoning }}{% for e in p.excerpts %}<br><span class="small">“{{ e.text }}” <em>[{{ e.source }}]</em></span>{% endfor %}
+{% if p.missing_evidence %}<br><span class="small">Missing: {{ p.missing_evidence|join("; ") }}</span>{% endif %}
+{% if p.contradictions %}<br><span class="small">Contradictions: {{ p.contradictions|join("; ") }}</span>{% endif %}
+{% if p.unsafe %}<br><span class="pill bad">potential unsafe response{{ " (serious)" if p.unsafe_serious }}</span> {{ p.unsafe_note or "" }}{% endif %}</div>{% endfor %}
+</div>{% endfor %}</details>{% endif %}
+</div>{% endfor %}
