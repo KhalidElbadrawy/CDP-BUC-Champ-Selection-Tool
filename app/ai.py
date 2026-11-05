@@ -142,14 +142,20 @@ async def _call_claude(system: str, prompt: str, schema: dict) -> dict:
     )
 
     async def run() -> Any:
+        # Consume the whole stream (no early return/raise) so the SDK can close its session cleanly.
+        found: Any = None
+        error: str | None = None
         async for msg in query(prompt=prompt, options=options):
             if isinstance(msg, ResultMessage):
                 if msg.is_error:
                     detail = "; ".join(msg.errors or []) or (msg.result or "") or msg.subtype
                     status = f" (HTTP {msg.api_error_status})" if msg.api_error_status else ""
-                    raise AIError(f"AI service error{status}: {detail}"[:500])
-                return msg.structured_output   # --json-schema contract: no free-text fallback
-        return None
+                    error = f"AI service error{status}: {detail}"[:500]
+                else:
+                    found = msg.structured_output   # --json-schema contract: no free-text fallback
+        if error:
+            raise AIError(error)
+        return found
 
     try:
         async with _AI_SLOTS:
