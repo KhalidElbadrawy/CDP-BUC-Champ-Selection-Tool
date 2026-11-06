@@ -243,7 +243,7 @@ def test_candidate_journey_over_http(client):
 # ---------------------------------------------------------------- decisions, dashboard, steps
 def test_decision_rules():
     with pytest.raises(workflow.WorkflowError):
-        workflow.decide(by_name("Hassan Ali"), "approved", "r")          # not assessed
+        workflow.decide(by_name("Sara Ibrahim"), "approved", "r")        # not assessed
     with pytest.raises(workflow.WorkflowError):
         workflow.decide(by_name("Huda Saeed"), "approved", "")          # rationale required
     workflow.decide(by_name("Huda Saeed"), "approved", "Strong evidence.")
@@ -291,3 +291,122 @@ def test_unsafe_answer_triggers_remediation_not_score():
     workflow.submit_answers(workflow.cand(c["id"]))
     r = asyncio.run(workflow.run_assessment(c["id"]))
     assert r["outcome"] == scoring.OUTCOME_REMEDIATION and workflow.cand(c["id"])["status"] == "Follow-up Requested"
+
+
+def test_clear_initiative_data(client):
+    login(client)
+    iid = workflow.create_initiative("Clear Me")
+    workflow.import_records(iid, [dict(name="Gone Person", entity="Temp Entity Z", email="gone@t.gov", consent=True, row_number=2)])
+    c = by_name("Gone Person", iid)
+    workflow.upload_cv(c, "Gone.docx", cv_bytes("Gone Person", "high", "ERP"))
+    path = db.q1("SELECT stored_path FROM documents WHERE candidate_id=?", (c["id"],))["stored_path"]
+    workflow.set_step(iid, 1, True)
+    r = client.post(f"/i/{iid}/clear", data={"csrf": csrf(client), "confirm_name": "wrong", "scope": "data"})
+    assert "Nothing was deleted" in r.text and workflow.cand(c["id"])
+    client.post(f"/i/{iid}/clear", data={"csrf": csrf(client), "confirm_name": "Clear Me", "scope": "data"})
+    assert workflow.cand(c["id"]) is None and not os.path.exists(path)
+    assert not db.q("SELECT 1 FROM audit WHERE candidate_id=?", (c["id"],))
+    assert not db.q1("SELECT 1 FROM entities WHERE name='Temp Entity Z'")
+    assert db.q1("SELECT 1 FROM initiatives WHERE id=?", (iid,)) and not workflow.step_progress(iid)[0]["completed_at"]
+    assert by_name("Aisha Rahman")                                      # other initiatives untouched
+    client.post(f"/i/{iid}/clear", data={"csrf": csrf(client), "confirm_name": "Clear Me", "scope": "initiative"})
+    assert not db.q1("SELECT 1 FROM initiatives WHERE id=?", (iid,))
+
+
+# ---------------------------------------------------------------- NEXUS game
+from app import game  # noqa: E402
+
+from app.seed import GOOD_PLAY  # noqa: E402
+
+
+def game_candidate(name, extra=1.0):
+    c = fresh_candidate(name)
+    workflow.invite(c)
+    workflow.confirm_consent(workflow.cand(c["id"]))
+    if extra != 1.0:
+        workflow.set_extra_time(workflow.cand(c["id"]), extra)
+    workflow.game_start(workflow.cand(c["id"]))
+    return workflow.cand(c["id"])
+
+
+def play(c, moves):
+    v = None
+    for a, p in moves:
+        v = workflow.game_action(workflow.cand(c["id"]), a, p)
+        assert not v.get("error"), (a, v.get("error"))
+    return v
+
+
+def test_full_game_assessed_with_event_evidence():
+    c = game_candidate("Game Good")
+    v = play(c, GOOD_PLAY)
+    assert v["finished"] and v["outcome"]["connected"] == "6 of 6"
+    assert workflow.cand(c["id"])["status"] == "Assessing"
+    r = asyncio.run(workflow.run_assessment(c["id"]))
+    assert r["outcome"] == scoring.OUTCOME_MEETS
+    snap = json.loads(db.q1("SELECT snapshot_json FROM evidence_versions WHERE candidate_id=? ORDER BY version DESC", (c["id"],))["snapshot_json"])
+    text = "\n".join(s["text"] for s in snap["sources"])
+    assert re.search(r"\bE\d+\b", text)                                  # evidence cites game events
+    assert "services restored" not in text and "restored_pct" not in text  # game outcome kept out of the evidence
+    assert db.q1("SELECT outcome_json FROM game_sessions WHERE candidate_id=?", (c["id"],))["outcome_json"]
+
+
+def test_switching_off_safety_lock_needs_remediation():
+    c = game_candidate("Game Unsafe")
+    moves = [m for m in GOOD_PLAY if not (m[0] == "stress_choice" and m[1].get("choice") == "refuse_escalate")]
+    i = moves.index(("stress_choice", {"choice": "protect_clinic"}))
+    moves.insert(i, ("stress_choice", {"choice": "switch_off"}))
+    play(c, moves)
+    r = asyncio.run(workflow.run_assessment(c["id"]))
+    assert r["outcome"] == scoring.OUTCOME_REMEDIATION
+    assert workflow.open_clarifications(c["id"])[0]["kind"] == "remediation"
+
+
+def test_hidden_information_and_practice_not_assessed():
+    c = game_candidate("Game Hidden")
+    v = workflow.game_action(c, "start_practice", {})
+    assert v["districts"]["clinic"]["detail"] is None                   # blockers hidden until inspected
+    v = workflow.game_action(workflow.cand(c["id"]), "fix", {"district": "harbour"})
+    v = workflow.game_action(workflow.cand(c["id"]), "finish_practice", {})
+    state, events = workflow.game_load(c["id"])
+    assert any(e["practice"] for e in events) and state["districts"]["harbour"]["dependency"] == 0
+    assert not any("fixed Harbour personally" in l for l in game.evidence(state, events)["lines"]["credibility"])
+
+
+def test_stress_timer_enforced_on_server():
+    c = game_candidate("Game Timer", extra=1.5)
+    play(c, GOOD_PLAY[:GOOD_PLAY.index(("read_brief", {}), 2) + 1])     # into round 2: stress S1 starts
+    state, events = workflow.game_load(c["id"])
+    assert state["phase"] == "stress" and state["stress"]["seconds"] == 90  # 60s x 1.5 extra time
+    state["stress"]["deadline"] = "2000-01-01T00:00:00+00:00"           # time has run out
+    workflow.game_save(c["id"], state, events)
+    v = workflow.game_action(workflow.cand(c["id"]), "poll", {})
+    _, events = workflow.game_load(c["id"])
+    assert v["phase"] == "playing" and any(e["type"] == "stress_timeout" for e in events)
+    v = workflow.game_action(workflow.cand(c["id"]), "stress_choice", {"choice": "fix_for_them"})
+    assert v.get("error")                                               # a late answer is not accepted
+
+
+def test_overall_clock_ends_game():
+    c = game_candidate("Game Clock")
+    play(c, GOOD_PLAY[:3])
+    state, events = workflow.game_load(c["id"])
+    state["ends_at"] = "2000-01-01T00:00:00+00:00"
+    workflow.game_save(c["id"], state, events)
+    v = workflow.game_action(workflow.cand(c["id"]), "poll", {})
+    assert v["phase"] == "handover"
+    v = play(c, [("handover", {"text": "Nothing finished yet; Harbour needs training, owned by the Trainer team."})])
+    assert v["finished"] and workflow.cand(c["id"])["status"] == "Assessing"
+
+
+def test_cannot_switch_to_written_after_starting_game(client):
+    c = game_candidate("Game Switch")
+    raw = workflow.invite(workflow.cand(c["id"])).rsplit("/", 1)[1]
+    client.get(f"/a/{raw}")
+    r = client.post("/assess/mode", data={"csrf": csrf(client), "mode": "text"})
+    assert "already started the game" in r.text
+    assert client.post("/play/api", json={"action": "poll"}, headers={"x-csrf": "bad"}).status_code == 403
+    r = client.post("/play/api", json={"action": "poll"}, headers={"x-csrf": csrf(client)})
+    assert r.status_code == 200 and r.json()["phase"] == "intro"
+    workflow.game_reset(workflow.cand(c["id"]))
+    assert workflow.game_load(c["id"])[0] is None

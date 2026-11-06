@@ -1,4 +1,13 @@
-{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ i.name }} · CDP Champion Selection{% endblock %}{% block content %}
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ i.name }} · CDP Champion Selection<details class="card danger-zone"><summary>Clear stored data for this initiative</summary>
+<p>This permanently deletes every nominee record in <strong>{{ i.name }}</strong>: survey rows, CV files, AI ratings, answers, game records, links, reports, decisions and their audit entries. It cannot be undone. Export the register first if you need a copy.</p>
+<form method="post" action="/i/{{ i.id }}/clear"><input type="hidden" name="csrf" value="{{ csrf }}">
+<fieldset><legend>What to delete</legend>
+<label class="radio"><input type="radio" name="scope" value="data" checked> Nominee data only (keep the initiative and reset its steps)</label>
+<label class="radio"><input type="radio" name="scope" value="initiative"> Nominee data and the initiative itself</label></fieldset>
+<label for="cn">Type the initiative's name to confirm: <strong>{{ i.name }}</strong></label><input id="cn" type="text" name="confirm_name" autocomplete="off" required>
+<div class="actions"><button class="danger">Delete permanently</button></div></form>
+</details>
+{% endblock %}{% block content %}
 <p><a href="/">← Dashboard</a></p>
 <h1>{{ i.name }}{% if i.status == "closed" %} <span class="pill">closed</span>{% endif %}</h1>
 <p class="muted">{{ i.platform or "" }}{% if i.platform and i.description %} · {% endif %}{{ i.description or "" }}</p>
@@ -64,5 +73,14 @@
 <div><button class="secondary">Save</button></div></form>
 <form method="post" action="/i/{{ i.id }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="close"><input type="hidden" name="closed" value="{{ '0' if i.status == 'closed' else '1' }}">
 <div class="actions"><button class="secondary small">{{ "Reopen initiative" if i.status == "closed" else "Close initiative" }}</button></div></form>
+</details>
+<details class="card danger-zone"><summary>Clear stored data for this initiative</summary>
+<p>This permanently deletes every nominee record in <strong>{{ i.name }}</strong>: survey rows, CV files, AI ratings, answers, game records, links, reports, decisions and their audit entries. It cannot be undone. Export the register first if you need a copy.</p>
+<form method="post" action="/i/{{ i.id }}/clear"><input type="hidden" name="csrf" value="{{ csrf }}">
+<fieldset><legend>What to delete</legend>
+<label class="radio"><input type="radio" name="scope" value="data" checked> Nominee data only (keep the initiative and reset its steps)</label>
+<label class="radio"><input type="radio" name="scope" value="initiative"> Nominee data and the initiative itself</label></fieldset>
+<label for="cn">Type the initiative's name to confirm: <strong>{{ i.name }}</strong></label><input id="cn" type="text" name="confirm_name" autocomplete="off" required>
+<div class="actions"><button class="danger">Delete permanently</button></div></form>
 </details>
 {% endblock %}

@@ -297,6 +297,19 @@ def submit_answers(c: dict, actor: str = "candidate") -> None:
 def build_snapshot(c: dict) -> dict:
     """Evidence for both assessors: identical, redacted, source-tagged."""
     names = [c["name"]]
+    if c["assessment_mode"] == "game":
+        from app import game
+        state, events = game_load(c["id"])
+        sources, indicators = game.snapshot_sources(state, events)
+        for s_ in sources:
+            s_["text"] = extraction.redact(s_["text"], names)
+        for cl in db.q("SELECT * FROM clarifications WHERE candidate_id=? AND response IS NOT NULL ORDER BY id", (c["id"],)):
+            prefix = "Remediation response" if cl["kind"] == "remediation" else "Clarification response"
+            sources.append({"id": f"CL{cl['round_no']}-{cl['criterion']}", "criterion": cl["criterion"],
+                            "label": f"{prefix} (round {cl['round_no']}) to: {cl['question'][:160]}",
+                            "text": extraction.redact(cl["response"], names)})
+        return {"platform": c["platform"], "workflow": c["workflow"], "sources": sources,
+                "game_indicators": indicators, "game_outcome_excluded": True}
     answers = json.loads(c["answers_json"] or "{}")
     origin = "offline document entered by the Change Lead" if c["assessment_mode"] == "offline" else "NEXUS text scenarios"
     sources = []
@@ -514,3 +527,114 @@ def delete_documents(cid: int, reason: str) -> None:
     db.ex("UPDATE documents SET stored_path=NULL, extracted_text=NULL, extract_status='deleted' WHERE candidate_id=?", (cid,))
     db.ex("UPDATE evidence_versions SET snapshot_json='{\"sources\":[],\"deleted\":true}' WHERE candidate_id=?", (cid,))
     db.audit("retention.deleted", actor="lead", candidate_id=cid, reason=reason)
+
+
+# ------------------------------------------------------------------ clearing an initiative's data
+def clear_initiative(iid: int, delete_initiative: bool = False) -> dict:
+    """Permanently delete every nominee record for an initiative: CV files, AI results, answers, game
+    records, links and their audit entries. Keeps one audit line with counts only (no personal data)."""
+    ids = [r["id"] for r in db.q("SELECT id FROM candidates WHERE initiative_id=?", (iid,))]
+    files = 0
+    for cid in ids:
+        for d in db.q("SELECT stored_path FROM documents WHERE candidate_id=? AND stored_path IS NOT NULL", (cid,)):
+            Path(d["stored_path"]).unlink(missing_ok=True)
+            files += 1
+        folder = Path(config.settings.upload_dir) / str(cid)
+        if folder.exists():
+            for f in folder.iterdir():
+                f.unlink(missing_ok=True)
+            folder.rmdir()
+    with db.tx() as conn:
+        for table in ("documents", "cv_screenings", "evidence_versions", "assessments", "clarifications",
+                      "game_sessions", "tokens", "audit"):
+            conn.executemany(f"DELETE FROM {table} WHERE candidate_id=?", [(cid,) for cid in ids])
+        conn.execute("DELETE FROM candidates WHERE initiative_id=?", (iid,))
+        conn.execute("DELETE FROM entities WHERE id NOT IN (SELECT DISTINCT entity_id FROM candidates WHERE entity_id IS NOT NULL)")
+        if delete_initiative:
+            conn.execute("DELETE FROM initiative_steps WHERE initiative_id=?", (iid,))
+            conn.execute("DELETE FROM initiatives WHERE id=?", (iid,))
+        else:
+            conn.execute("UPDATE initiative_steps SET completed_at=NULL WHERE initiative_id=?", (iid,))
+    db.audit("initiative.deleted" if delete_initiative else "initiative.cleared", actor="lead",
+             initiative_id=None if delete_initiative else iid, nominees=len(ids), files=files)
+    return {"nominees": len(ids), "files": files}
+
+
+# ------------------------------------------------------------------ NEXUS game
+def game_load(cid: int) -> tuple[dict | None, list]:
+    row = db.q1("SELECT * FROM game_sessions WHERE candidate_id=?", (cid,))
+    if not row or not row["state_json"]:
+        return None, []
+    return json.loads(row["state_json"]), json.loads(row["events_json"] or "[]")
+
+
+def game_save(cid: int, state: dict, events: list) -> None:
+    db.ex("UPDATE game_sessions SET state_json=?, events_json=? WHERE candidate_id=?",
+          (json.dumps(state), json.dumps(events), cid))
+
+
+def game_start(c: dict) -> dict:
+    from app import game
+    _active(c)
+    if c["status"] != "In Assessment" or not c["consent_assessment_at"]:
+        raise WorkflowError("Please confirm your consent first.")
+    state, _ = game_load(c["id"])
+    if state:
+        return state
+    if c["assessment_mode"] == "text" and json.loads(c["answers_json"] or "{}"):
+        raise WorkflowError("You have already started the written version.")
+    minutes = int(scoring.current_config()[1].get("game_minutes", 45))
+    state = game.new_state(minutes, float(c["extra_time"] or 1.0))
+    db.ex("INSERT OR REPLACE INTO game_sessions(candidate_id, state_json, events_json, started_at) VALUES (?,?,?,?)",
+          (c["id"], json.dumps(state), "[]", db.now()))
+    db.ex("UPDATE candidates SET assessment_mode='game' WHERE id=?", (c["id"],))
+    db.audit("game.opened", actor="candidate", candidate_id=c["id"], minutes=minutes, extra_time=c["extra_time"])
+    return state
+
+
+def game_action(c: dict, action: str, params: dict) -> dict:
+    """Apply one action (or a timer check when action is 'poll'). Returns the browser view."""
+    from app import game
+    _active(c)
+    state, events = game_load(c["id"])
+    if not state:
+        raise WorkflowError("The game has not been started.")
+    if c["status"] != "In Assessment":
+        return game.view(state)
+    before = len(events)
+    if action == "poll":
+        game.tick(state, events)
+    else:
+        try:
+            game.act(state, events, action, params)
+        except game.GameError as e:
+            game_save(c["id"], state, events)
+            v = game.view(state)
+            v["error"] = str(e)
+            return v
+    game_save(c["id"], state, events)
+    if state["finished"] and len(events) > before or (state["finished"] and c["status"] == "In Assessment"):
+        game_finish(c["id"], state, events)
+    return game.view(state)
+
+
+def game_finish(cid: int, state: dict, events: list) -> None:
+    from app import game
+    c = cand(cid)
+    if c["status"] != "In Assessment":
+        return
+    out = game.outcome(state)
+    db.ex("UPDATE game_sessions SET outcome_json=?, completed_at=? WHERE candidate_id=?", (json.dumps(out), db.now(), cid))
+    db.audit("game.finished", actor="candidate", candidate_id=cid, reason=state["end_reason"], events=len(events), **out)
+    set_status(cid, "Assessing", "candidate")
+    snapshot_evidence(cid)
+
+
+def game_reset(c: dict) -> None:
+    """Change Lead only: discard an unfinished game (e.g. after a technical problem) so the candidate can restart
+    or use the written version."""
+    if c["status"] not in ("Invited", "In Assessment"):
+        raise WorkflowError("Only an unfinished game can be reset.")
+    db.ex("DELETE FROM game_sessions WHERE candidate_id=?", (c["id"],))
+    db.ex("UPDATE candidates SET assessment_mode=NULL WHERE id=?", (c["id"],))
+    db.audit("game.reset", actor="lead", candidate_id=c["id"])

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import docx
 
-from app import config, db, imports, workflow
+from app import config, db, game, imports, workflow
 from app.config import BASE_DIR
 from app.main import startup
 
@@ -73,6 +73,25 @@ WEAK_EMPATHY = dict(ANSWERS,
 UNSAFE = dict(ANSWERS, judgment=("If the official says it is that urgent I would switch off the lock just this once so Grid comes "
                                  "back online, then tell the team about it later in the week."))
 THIN = dict(ANSWERS, curiosity="", reliability="I always keep my promises.")
+
+
+# A sound playthrough of NEXUS used for demo data and tests.
+GOOD_PLAY = [
+    ("finish_practice", {}), ("read_brief", {}),
+    *[("inspect", {"district": d}) for d in game.DISTRICTS],
+    ("diagnose", {"district": "harbour", "blocker": "skill"}), ("train", {"district": "harbour"}),
+    ("link", {"edge": "core-harbour"}), ("link", {"edge": "core-market"}), ("link", {"edge": "core-transit"}),
+    ("engineer", {"district": "clinic"}), ("refer", {"district": "market"}), ("end_round", {}),
+    ("read_brief", {}), ("stress_choice", {"choice": "teach_now"}), ("respond", {"request": "R1", "choice": "promise"}),
+    ("link", {"edge": "clinic-transit"}), ("link", {"edge": "transit-grid"}), ("train", {"district": "transit"}), ("end_round", {}),
+    ("read_brief", {}), ("respond", {"request": "R2", "choice": "promise"}), ("link", {"edge": "market-archive"}),
+    ("train", {"district": "market"}), ("end_round", {}),
+    ("read_brief", {}), ("stress_choice", {"choice": "refuse_escalate", "text": "I can't switch it off; let's use the approved restart."}),
+    ("stress_choice", {"choice": "protect_clinic"}), ("inspection", {}), ("respond", {"request": "R3", "choice": "promise"}), ("end_round", {}),
+    ("read_brief", {}), *[("kai", {"option": o}) for o in ("ask", "check", "tell_amber", "reassure", "note")], ("end_round", {}),
+    ("read_brief", {}), ("stress_choice", {"choice": "peer_transit"}), ("inspect", {"district": "transit"}), ("end_round", {}),
+    ("handover", {"text": "Unfinished: Archive's records referral sits with the council policy team; Grid's breaker is owned by the engineers. Next: train Grid staff."}),
+]
 
 
 def cv_bytes(name: str, tier: str, platform: str) -> bytes:
@@ -151,6 +170,14 @@ async def seed() -> None:
         await workflow.run_assessment(c["id"])
     for name in ("Hassan Ali", "Sara Ibrahim", "Noor Jaber"):
         workflow.invite(workflow.cand(by[name]))
+    # Hassan plays the whole NEXUS game; Noor is part-way through round 3
+    for name, moves in (("Hassan Ali", GOOD_PLAY), ("Noor Jaber", GOOD_PLAY[:24])):
+        cid = by[name]
+        workflow.confirm_consent(workflow.cand(cid))
+        workflow.game_start(workflow.cand(cid))
+        for a, p in moves:
+            workflow.game_action(workflow.cand(cid), a, p)
+    await workflow.run_assessment(by["Hassan Ali"])
     workflow.confirm_consent(workflow.cand(by["Sara Ibrahim"]))
     workflow.save_answers(workflow.cand(by["Sara Ibrahim"]), {"credibility": ANSWERS["credibility"]}, "text")
 

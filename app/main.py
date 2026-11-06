@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -24,6 +24,7 @@ from app.workflow import WorkflowError
 
 HERE = Path(__file__).parent
 log = logging.getLogger("cdp")
+_tasks: set = set()  # keep references to background assessment tasks
 
 
 @asynccontextmanager
@@ -255,6 +256,19 @@ async def initiative_edit(iid: int, request: Request):
     return back(f"/i/{iid}", msg="Initiative updated.")
 
 
+@app.post("/i/{iid}/clear")
+async def initiative_clear(iid: int, request: Request):
+    lead(request)
+    i = get_init(iid)
+    f = await form(request)
+    if (f.get("confirm_name") or "").strip() != i["name"]:
+        return back(f"/i/{iid}", err="Nothing was deleted. Type the initiative's name exactly to confirm.")
+    delete_all = f.get("scope") == "initiative"
+    res = workflow.clear_initiative(iid, delete_initiative=delete_all)
+    msg = f"Deleted {res['nominees']} nominee record(s) and {res['files']} CV file(s)."
+    return back("/", msg=msg + " The initiative was removed.") if delete_all else back(f"/i/{iid}", msg=msg + " Steps were reset.")
+
+
 @app.get("/i/{iid}/export.csv")
 def initiative_export(iid: int, request: Request):
     lead(request)
@@ -465,6 +479,8 @@ async def candidate_action(cid: int, action: str, request: Request, background: 
             workflow.submit_answers(workflow.cand(cid), actor="lead")
             background.add_task(workflow.run_assessment, cid)
             return back(url, msg="Offline answers saved. AI assessment started.")
+        elif action == "reset-game":
+            workflow.game_reset(c)
         elif action == "retry":
             if c["status"] != "Assessing":
                 raise WorkflowError("Only an assessment that is waiting can be retried.")
@@ -601,3 +617,55 @@ async def assess_clarify(request: Request, background: BackgroundTasks):
         return back("/assess", err=str(e))
     background.add_task(workflow.run_assessment, c["id"])
     return back("/assess", msg="Thank you. Your answers have been submitted.")
+
+
+# ------------------------------------------------------------------ NEXUS game
+@app.post("/assess/mode")
+async def assess_mode(request: Request):
+    c = me(request)
+    f = await form(request)
+    if f.get("mode") == "game":
+        try:
+            workflow.game_start(c)
+        except WorkflowError as e:
+            return back("/assess", err=str(e))
+        return RedirectResponse("/play", status_code=303)
+    if f.get("mode") == "text":
+        state, _ = workflow.game_load(c["id"])
+        if state:
+            return back("/assess", err="You have already started the game. Contact the CDP Change Lead if you need the written version.")
+        db.ex("UPDATE candidates SET assessment_mode='text' WHERE id=?", (c["id"],))
+        db.audit("assessment.mode_text", actor="candidate", candidate_id=c["id"])
+    return back("/assess")
+
+
+@app.get("/play", response_class=HTMLResponse)
+def play(request: Request):
+    c = me(request)
+    state, _ = workflow.game_load(c["id"])
+    if not state or c["status"] != "In Assessment":
+        return RedirectResponse("/assess", status_code=303)
+    return render(request, "play.html", c=c)
+
+
+@app.post("/play/api")
+async def play_api(request: Request):
+    c = me(request)
+    security.check_csrf(request, request.headers.get("x-csrf"))
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    action = str(body.get("action") or "poll")
+    params = body.get("params") if isinstance(body.get("params"), dict) else {}
+    try:
+        view = workflow.game_action(c, action, params)
+    except WorkflowError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+    fresh = workflow.cand(c["id"])
+    view["assessment_status"] = fresh["status"]
+    if fresh["status"] == "Assessing" and c["status"] == "In Assessment":
+        task = asyncio.create_task(workflow.run_assessment(c["id"]))
+        _tasks.add(task)
+        task.add_done_callback(_tasks.discard)
+    return JSONResponse(view)

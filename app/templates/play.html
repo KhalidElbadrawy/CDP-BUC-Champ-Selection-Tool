@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}NEXUS: Reconnect the City{% endblock %}{% block content %}
+<link rel="stylesheet" href="/static/nexus.css">
+<div id="nexus" class="nexus" data-csrf="{{ csrf }}">
+  <div class="nx-bar" role="status" aria-live="polite">
+    <div class="nx-title">NEXUS <span>Reconnect the City</span></div>
+    <div class="nx-stats">
+      <span class="nx-chip" id="nx-round">Practice</span>
+      <span class="nx-chip" title="Energy left this round">⚡ <b id="nx-energy">–</b></span>
+      <span class="nx-chip" title="Cables left">⌁ <b id="nx-cables">–</b> cables</span>
+      <span class="nx-chip" id="nx-crew" title="Crew available this round"></span>
+      <span class="nx-chip nx-clock" id="nx-clock" title="Time left">--:--</span>
+    </div>
+  </div>
+
+  <div class="nx-main">
+    <div class="nx-mapwrap">
+      <svg id="nx-map" viewBox="0 0 800 580" role="group" aria-label="City map: districts and cable routes"></svg>
+      <div class="nx-legend small"><span><i class="lg built"></i>cable</span><span><i class="lg open"></i>route you can cable</span><span><i class="lg damaged"></i>damaged</span><span><i class="lg restricted"></i>needs inspection</span></div>
+    </div>
+    <aside class="nx-panel" aria-label="Control panel">
+      <div id="nx-msg" class="nx-msg" role="alert" hidden></div>
+      <div id="nx-summary" class="nx-summary"></div>
+      <section id="nx-district"></section>
+      <section id="nx-kai" hidden></section>
+      <section id="nx-requests"></section>
+      <details class="nx-net"><summary>All cable routes (keyboard friendly)</summary><div id="nx-edges"></div></details>
+      <div class="nx-end"><button id="nx-endround" class="nx-btn primary">End round</button></div>
+    </aside>
+  </div>
+
+  <div id="nx-overlay" class="nx-overlay" hidden><div class="nx-modal" role="dialog" aria-modal="true" aria-labelledby="nx-modal-title" id="nx-modal"></div></div>
+</div>
+<noscript><div class="flash err">The NEXUS game needs JavaScript. Please ask the CDP Change Lead for the written version.</div></noscript>
+<script src="/static/nexus.js"></script>
+{% endblock %}

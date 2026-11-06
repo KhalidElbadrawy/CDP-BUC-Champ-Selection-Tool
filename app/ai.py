@@ -278,7 +278,11 @@ async def live_pass(snapshot: dict, assessor: str) -> dict:
     system = ("You are an independent assessor for the CDP Business User Champion programme. "
               "Assess the candidate against the scorecard. Another assessor works separately; you will never "
               "see their work and they will never see yours.\n" + GUARDRAILS + "\n\n" + rubric_text())
-    prompt = ("Assess this evidence. For every criterion return rating (1-5 or null), rating_basis, excerpts "
+    game_note = ("This evidence is the record of the candidate's play in NEXUS, a strategy game. Each line cites an event id "
+                 "(E12 etc.); cite those ids in your excerpts. Rate demonstrated behaviour in the game, not the game score: "
+                 "the game outcome is deliberately excluded. Choices made under a countdown are stress moments.\n\n"
+                 if snapshot.get("game_indicators") else "")
+    prompt = (game_note + "Assess this evidence. For every criterion return rating (1-5 or null), rating_basis, excerpts "
               "with source ids, reasoning, evidence_strength, missing_evidence, contradictions and unsafe flags.\n\n"
               + render_evidence(snapshot))
     return normalise_pass(await _call_claude(system, prompt, PASS_SCHEMA))
@@ -388,8 +392,33 @@ def _demo_rating(text: str, key: str, variant: str) -> dict:
     return res
 
 
+def demo_game_pass(snapshot: dict, variant: str) -> dict:
+    """Demo assessor for the NEXUS game: rule-based indicator ratings. Where a follow-up answer exists for a
+    criterion, that criterion is rated from the written answer instead."""
+    from app import game
+    out = {}
+    for k in CRITERION_KEYS:
+        has_followup = any(s["id"].startswith("CL") and s.get("criterion") == k for s in snapshot["sources"])
+        if has_followup:
+            out[k] = _demo_rating(_criterion_text(snapshot, k), k, variant)
+            continue
+        r = game.demo_rating(k, snapshot["game_indicators"], variant)
+        text = next((s["text"] for s in snapshot["sources"] if s["id"] == f"GAME-{k}"), "")
+        refs = re.findall(r"\bE\d+\b", text)[:4]
+        out[k] = {"rating": r["rating"], "rating_basis": ("unsafe" if r["unsafe_serious"] else "inadequate") if r["rating"] == 1 else None,
+                  "excerpts": [{"text": line[:200], "source": f"GAME-{k}"} for line in text.splitlines()[:2]],
+                  "reasoning": f"[SIMULATED] Rule-based reading of the game record (events {', '.join(refs) or 'none'}).",
+                  "evidence_strength": "moderate" if r["rating"] else "limited",
+                  "missing_evidence": [] if r["rating"] else ["The game record holds too little evidence for this criterion."],
+                  "contradictions": [], "unsafe": r["unsafe_serious"], "unsafe_serious": r["unsafe_serious"],
+                  "unsafe_note": "Switched off the safety lock under pressure." if r["unsafe_serious"] else None}
+    return {"criteria": out}
+
+
 def demo_pass(snapshot: dict, assessor: str) -> dict:
     variant = "A" if assessor == "A" else "B"
+    if snapshot.get("game_indicators"):
+        return demo_game_pass(snapshot, variant)
     return {"criteria": {k: _demo_rating(_criterion_text(snapshot, k), k, variant) for k in CRITERION_KEYS}}
 
 

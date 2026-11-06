@@ -58,6 +58,12 @@
 </section>
 
 <section class="card"><h2>Assessment</h2>
+<p class="small">Mode: {{ {"game": "NEXUS game", "text": "NEXUS written version", "offline": "offline document"}.get(c.assessment_mode, "not chosen yet") }}</p>
+{% if game %}{% set gs = game.state_json|fromjson %}<p class="small">Game: {{ "finished" if game.completed_at else ("round " ~ gs.round ~ " of 6" if gs.round else "not started") }}
+{% if gs.extra_time and gs.extra_time > 1 %} · extra time {{ gs.extra_time }}×{% endif %} · {{ (game.events_json|fromjson)|length }} moves recorded{% if gs.end_reason == "time" %} · ended by the clock{% endif %}</p>
+{% if game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p class="small">Game outcome (not part of the score): services {{ g.restored }} · independent districts {{ g.independent }} · connected {{ g.connected }} · safety controls {{ g.controls }}</p>{% endif %}
+{% if c.status in ("Invited", "In Assessment") and not game.completed_at %}<form method="post" action="/c/{{ c.id }}/reset-game"><input type="hidden" name="csrf" value="{{ csrf }}">
+<p class="small muted">If the candidate had a technical problem, you can discard the unfinished game so they can restart or use the written version.</p><button class="small secondary">Reset unfinished game</button></form>{% endif %}{% endif %}
 {% set detail = False %}{% include "_assessment.html" %}
 {% if c.status == "Assessing" %}<p class="small">AI assessment in progress.</p><form method="post" action="/c/{{ c.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">Retry AI assessment</button></form>{% endif %}
 {% if clarifications %}<details><summary>Follow-up questions ({{ clarifications|length }})</summary><ul class="small">{% for q in clarifications %}<li>Round {{ q.round_no }} · {{ q.criterion }} · {{ q.kind }}: {{ q.question }}<br><em>{{ q.response or "Awaiting answer" }}</em></li>{% endfor %}</ul></details>{% endif %}

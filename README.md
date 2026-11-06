@@ -22,9 +22,22 @@ Version 1 (the multi-role nomination tool) is kept on the `v1` and `main` branch
 
 The **dashboard** shows entities, champions nominated, counts per fit category and approved champions, filtered by initiative, entity and fit category, with a CSV export.
 
-## Build stages
-- **Stage 1 (this branch):** everything above, with the NEXUS *text scenarios* as the assessment (also the accessible alternative to the game).
-- **Stage 2 (next):** the interactive NEXUS game: six districts, six rounds, timed stress moments, the AI teammate puzzle, and extra-time adjustments (already settable per candidate).
+## The NEXUS game (phase 2 assessment)
+Candidates choose the **NEXUS game** (recommended, laptop or tablet) or the **written version** (untimed, accessible). Once started, they cannot switch; you can reset an unfinished game after a technical problem.
+
+- **Practice first** (untimed, not assessed), then **six rounds** restoring six districts: explore, diagnose blockers (skill gap, access, faulty equipment, policy), lay cables to connect districts to the core, and use limited energy and a small crew (Trainer, Engineer, Liaison).
+- **Lasting trade-off:** fixing a district yourself is quick but builds dependency; training it costs more but lets it run independently and coach its neighbours.
+- **Disruption (round 4):** new rules (Archive cables need a safety inspection) and an energy cut.
+- **Requests and promises:** districts ask for help; promises are tracked to the round they're due, and players can warn about delays.
+- **Co-op puzzle (round 5):** guide Kai, an AI teammate who sees information you can't. Kai is scripted, so every candidate faces the same puzzle; the player's own words are recorded.
+- **Stress moments:** four timed decisions (60–90 seconds), including a senior official demanding a safety lock is switched off. If time runs out, a default consequence applies and is recorded.
+- **Overall clock:** 45 minutes (Settings), multiplied by any extra time you grant a candidate.
+- **Handover note** at the end: what's unfinished, who owns it, what's next.
+
+The game runs on the server: timers and consequences can't be tampered with, and every move is saved. The AI assesses the **game record**, with every rating citing event ids (for example E23). The **game outcome** (services restored, independent districts, safety controls kept) is shown separately in the report and is never part of the score. Ratings are provisional and should be calibrated in a pilot.
+
+## Clearing data
+On each initiative's page, **Clear stored data** permanently deletes that initiative's nominee records: survey rows, CV files, AI ratings, answers, game records, links, decisions and their audit entries. Type the initiative's name to confirm. You can keep the initiative (its steps reset) or delete it too. Other initiatives are untouched.
 
 ## Run locally
 ```bash
@@ -32,7 +45,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m app.seed          # fictional demo data + samples/nominations_sample.csv
 .venv/bin/uvicorn app.main:app
 ```
-Open http://localhost:8000 and sign in with the password **demo** (only when `CDP_LEAD_PASSWORD` is not set and not in production). Try importing `samples/nominations_sample.csv` into the "HR Self-Service Rollout" initiative.
+Open http://localhost:8000 and sign in with the password **demo** (only when `CDP_LEAD_PASSWORD` is not set and not in production). Try importing `samples/nominations_sample.csv` into the "HR Self-Service Rollout" initiative. Hassan Ali's report shows a completed game; Noor Jaber is part-way through one.
 
 Tests: `.venv/bin/python -m pytest -q`
 

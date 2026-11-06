@@ -13,6 +13,25 @@
 <label class="radio"><input type="checkbox" name="consent" value="yes" required> {{ _("I agree to take part and for my answers to be assessed by AI.") }}</label>
 <div class="actions"><button>{{ _("Start") }}</button></div></form></div>
 
+{% elif c.status == "In Assessment" and c.assessment_mode == "game" %}
+<div class="card"><h2>{{ _("Your game is saved") }}</h2><p>{{ _("Continue where you left off. The clock keeps running while you are away.") }}</p>
+<div class="actions"><a class="btn" href="/play">{{ _("Continue the game") }}</a></div></div>
+
+{% elif c.status == "In Assessment" and not c.assessment_mode %}
+<div class="card"><h2>{{ _("Choose how to take the assessment") }}</h2>
+<div class="grid g2">
+<form method="post" action="/assess/mode" class="choice"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="mode" value="game">
+<h3>{{ _("Play NEXUS (recommended)") }}</h3>
+<ul class="small"><li>{{ _("A strategy game: six rounds restoring the city's districts, with a short practice first.") }}</li>
+<li>{{ _("About 45 minutes, with a visible clock and a few timed moments.") }}{% if c.extra_time and c.extra_time > 1 %} {{ _("Extra time has been added for you:") }} {{ c.extra_time }}×.{% endif %}</li>
+<li>{{ _("Best on a laptop or tablet. Your progress is saved after every move.") }}</li></ul>
+<button>{{ _("Play NEXUS") }}</button></form>
+<form method="post" action="/assess/mode" class="choice"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="mode" value="text">
+<h3>{{ _("Written version") }}</h3>
+<ul class="small"><li>{{ _("The same city situations, answered in writing.") }}</li><li>{{ _("Untimed, and works well with screen readers and on phones.") }}</li></ul>
+<button class="secondary">{{ _("Use the written version") }}</button></form>
+</div><p class="small muted">{{ _("Both versions are assessed against the same scorecard. Once you start one, you cannot switch.") }}</p></div>
+
 {% elif c.status == "In Assessment" %}
 <form method="post" action="/assess/save" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
 <h2>{{ _("The city scenarios") }}</h2><p class="muted">{{ _("Answer each scenario in your own words. Specific, practical answers help most.") }}</p>

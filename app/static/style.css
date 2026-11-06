@@ -88,3 +88,5 @@ table.num td,table.num th{font-variant-numeric:tabular-nums}table.num tfoot th,t
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:860px){.layout-2{grid-template-columns:1fr}.init-row{grid-template-columns:1fr}}
 @media print{.noprint{display:none}}
+.danger-zone{border-color:#e6b4b0}.danger-zone summary{color:var(--bad)}
+.choice{border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:8px;align-content:start}.choice h3{margin:0}
