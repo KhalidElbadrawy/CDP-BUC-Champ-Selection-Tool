@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block content %}
+<p><a href="/i/{{ i.id }}">← {{ i.name }}</a></p>
+<h1>CV upload results</h1>
+<div class="card"><h2>Matched ({{ done|length }})</h2>
+<div class="table-wrap"><table><thead><tr><th>File</th><th>Nominee</th><th>Result</th></tr></thead><tbody>
+{% for d in done %}<tr><td class="small">{{ d.file }}</td><td>{{ d.name }}</td><td>{% if d.status == "ok" %}<span class="pill ok">text read</span>{% else %}<span class="pill warn">{{ d.status }}</span> <span class="small">{{ d.error }}</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="3">None.</td></tr>{% endfor %}</tbody></table></div></div>
+{% if unmatched %}<form method="post" action="/i/{{ i.id }}/cvs/assign" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
+<h2>Not matched ({{ unmatched|length }})</h2><p class="small muted">Choose the nominee for each file, or leave it blank to skip.</p>
+<div class="table-wrap"><table><thead><tr><th>File</th><th>Nominee</th></tr></thead><tbody>
+{% for u in unmatched %}<tr><td class="small">{{ u.file }}<input type="hidden" name="name_{{ u.key }}" value="{{ u.file }}"></td>
+<td><select name="assign_{{ u.key }}" aria-label="Nominee for {{ u.file }}"><option value="">— skip —</option>{% for p in people %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></td></tr>{% endfor %}
+</tbody></table></div><div class="actions"><button>Assign CVs</button></div></form>{% endif %}
+<p><a class="btn" href="/i/{{ i.id }}">Back to the initiative</a></p>
+{% endblock %}

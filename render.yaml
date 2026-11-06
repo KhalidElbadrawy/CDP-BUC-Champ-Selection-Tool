@@ -2,7 +2,7 @@
 # Private values (marked sync: false) are typed into Render's screen, never stored in GitHub.
 services:
   - type: web
-    name: cdp-champion-tool
+    name: cdp-champion-selection
     runtime: python
     plan: starter                 # paid plan: needed for the persistent disk below
     buildCommand: pip install -r requirements.txt
@@ -28,24 +28,12 @@ services:
       - key: CDP_DEMO_LAUNCHER
         value: "0"
       - key: CDP_JOBS_EVERY_HOURS
-        value: "24"               # daily: retry failed assessments, send due reminders, apply retention
+        value: "24"               # daily: retry failed AI work, apply retention
       - key: CDP_SECRET_KEY
         generateValue: true       # Render creates a random value for you
       - key: ANTHROPIC_API_KEY
         sync: false               # you paste this into Render
-      - key: CDP_LEAD_EMAIL
-        sync: false
+      - key: CDP_LEAD_PASSWORD
+        sync: false               # the Change Lead's sign-in password (10+ characters)
       - key: CDP_BASE_URL
         sync: false               # e.g. https://cdp-champion-tool.onrender.com
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
-        sync: false
-      - key: SMTP_STARTTLS
-        value: "true"

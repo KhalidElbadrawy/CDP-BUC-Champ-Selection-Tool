@@ -1,9 +1,42 @@
-{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
-<h1>Individual assessment report — {{ a.nominee_name }} ({{ a.ref }})</h1>
-<p>{{ a.entity_name }} · {{ a.department }} · {{ a.platform }} / {{ a.workflow }} · Status: {{ a.status }}</p>
-<div class="notice">This report is AI-generated{% if assessments and assessments[0].mode == "demo" %} — <strong>SIMULATED by the demo assessor, not a live assessment</strong>{% endif %}. Agreement between the two blinded assessment passes indicates scoring consistency; it does not independently verify CV claims. Weights and thresholds are proposed settings requiring pilot validation.</div>
-{% set assessments = assessments[:1] %}{% include "_assessment_detail.html" %}
-<h2>Appointment requirements</h2><ul>{% for r in reqs %}<li>{{ "Met" if r.met else "Outstanding" }} — {{ r.label }}</li>{% endfor %}</ul>
-{% if clarifications %}<h2>Outstanding evidence or remediation</h2><ul>{% for c in clarifications if not c.response %}<li>{{ c.kind }} ({{ c.criterion }}): {{ c.question }}</li>{% else %}<li>None outstanding</li>{% endfor %}</ul>{% endif %}
-<p class="actions"><button onclick="window.print()">Print / save as PDF</button></p>
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}Report · {{ c.name }}{% endblock %}{% block content %}
+<p class="noprint"><a href="/c/{{ c.id }}">← {{ c.name }}</a></p>
+<h1>Assessment report: {{ c.name }}</h1>
+<p class="muted">{{ c.ref }} · {{ c.entity_name }}{% if c.department %} · {{ c.department }}{% endif %} · {{ c.initiative_name }} · {{ c.platform or "" }}{% if c.workflow %} / {{ c.workflow }}{% endif %}</p>
+<div class="notice">This report is <strong>AI-generated and provisional</strong>{% if asmt and asmt.mode == "demo" %}, produced by the <strong>SIMULATED</strong> demo assessor, not live AI{% endif %}. Two independent AI assessments were compared by an AI moderator; agreement shows scoring consistency, not verification of CV claims. Weights and thresholds are proposed settings to calibrate in a pilot. The decision rests with the CDP Change Lead.</div>
+
+{% if asmt and asmt.result %}{% set r = asmt.result %}
+<section class="card"><h2>Summary</h2>
+<div class="grid g3"><div><div class="small muted">Recommendation</div><strong>{{ r.recommendation }}</strong></div>
+<div><div class="small muted">Assessment score</div><strong>{{ r.score_text }}</strong></div>
+<div><div class="small muted">Outcome</div>{{ m.outcome_pill(r.final_outcome or r.outcome) }}</div></div>
+{% set strengths = r.criteria|selectattr("rating")|selectattr("rating", "ge", 4)|list %}
+{% set develop = r.criteria|selectattr("rating")|selectattr("rating", "le", 2)|list %}
+<div class="grid g2" style="margin-top:12px"><div><h3>Strengths shown</h3><ul>{% for x in strengths %}<li>{{ x.name }} ({{ x.rating }}/5)</li>{% else %}<li class="muted">None rated 4 or above.</li>{% endfor %}</ul></div>
+<div><h3>Development areas</h3><ul>{% for x in develop %}<li>{{ x.name }} ({{ x.rating }}/5)</li>{% else %}<li class="muted">None rated 2 or below.</li>{% endfor %}
+{% for x in r.criteria if x.rating is none %}<li>{{ x.name }}: not yet assessed</li>{% endfor %}</ul></div></div>
+{% if r.unsafe_serious %}<div class="warnbox">A possible safety concern was identified in: {{ r.unsafe_serious|join(", ") }}.</div>{% endif %}
+</section>{% endif %}
+
+<section class="card"><h2>Phase 1: CV fit</h2>
+{% if screen %}<p>{{ m.mode_pill(screen.mode) }} AI rating {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %}, changed by the Change Lead to {{ m.fit_pill(c.fit_final) }} ({{ c.fit_override_reason }}){% endif %}</p>
+<p>{{ screen.result.summary }}</p>
+<ul class="small">{% for e in screen.result.evidence %}<li><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% endfor %}</ul>
+{% if screen.result.gaps %}<p class="small">Gaps: {{ screen.result.gaps|join(" ") }}</p>{% endif %}{% else %}<p class="muted">Not rated.</p>{% endif %}
+</section>
+
+<section class="card"><h2>Phase 2: game outcome</h2>
+{% if game and game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p>City services restored: {{ g.restored }} · Districts operating independently: {{ g.independent }} · Safety controls kept: {{ g.controls }}</p>
+{% else %}<p class="muted">{{ "Completed through the NEXUS text scenarios (no game outcome)." if c.assessment_mode in ("text","offline") else "Not played." }}</p>{% endif %}
+<p class="small muted">The game outcome is shown for context only. It is not part of the assessment score.</p>
+</section>
+
+<section class="card"><h2>Phase 2: behavioural assessment</h2>
+{% set detail = True %}{% include "_assessment.html" %}
+<p class="small muted">Assessment mode: {{ {"text": "NEXUS text scenarios", "offline": "offline document entered by the Change Lead", "game": "NEXUS game"}.get(c.assessment_mode, "—") }}{% if asmt %} · evidence version {{ asmt.evidence_version }} · settings version {{ asmt.config_version }} · {{ (asmt.completed_at or asmt.created_at)[:16]|replace("T", " ") }}{% endif %}</p>
+</section>
+
+<section class="card"><h2>Decision</h2>
+{% if c.decision %}<p><strong>{{ "Approved" if c.decision == "approved" else "Not approved" }}</strong> by the CDP Change Lead on {{ c.decided_at[:10] }}. Rationale: {{ c.decision_rationale }}</p>{% else %}<p class="muted">No decision recorded yet.</p>{% endif %}
+</section>
+<p class="noprint"><button onclick="window.print()">Print or save as PDF</button></p>
 {% endblock %}

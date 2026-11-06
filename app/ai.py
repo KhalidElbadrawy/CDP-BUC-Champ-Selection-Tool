@@ -102,20 +102,19 @@ MOD_SCHEMA = {
 CV_SCHEMA = {
     "type": "object",
     "properties": {
+        "fit_category": {"type": "string", "enum": ["High Fit", "Moderate Fit", "Low Fit", "Doesn't Fit"]},
+        "summary": {"type": "string"},
         "extracted": {"type": "object", "properties": {
             "current_role": {"type": "string"}, "experience_summary": {"type": "string"},
             "platforms": {"type": "array", "items": {"type": "string"}},
-            "workflows": {"type": "array", "items": {"type": "string"}},
-            "examples": {"type": "array", "items": {"type": "string"}}},
-            "required": ["current_role", "experience_summary", "platforms", "workflows", "examples"]},
-        "criterion_evidence": {"type": "object", "properties": {
-            k: {"type": "array", "items": {"type": "string"}} for k in CRITERION_KEYS}},
+            "workflows": {"type": "array", "items": {"type": "string"}}},
+            "required": ["current_role", "experience_summary", "platforms", "workflows"]},
+        "evidence": {"type": "array", "items": {"type": "object", "properties": {
+            "area": {"type": "string"}, "excerpt": {"type": "string"}}, "required": ["area", "excerpt"]}},
         "gaps": {"type": "array", "items": {"type": "string"}},
-        "follow_up_questions": {"type": "array", "items": {"type": "object", "properties": {
-            "criterion": {"type": "string"}, "question": {"type": "string"}}, "required": ["criterion", "question"]}},
-        "summary": {"type": "string"},
+        "phase2_focus": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["extracted", "criterion_evidence", "gaps", "follow_up_questions", "summary"],
+    "required": ["fit_category", "summary", "extracted", "evidence", "gaps", "phase2_focus"],
 }
 
 
@@ -241,16 +240,39 @@ def normalise_moderation(raw: dict, a: dict, b: dict) -> dict:
 
 
 # ======================================================================== live engine
+def fit_rubric() -> str:
+    from app.scoring import FIT_DEFINITIONS
+    return "Fit categories:\n" + "\n".join(f"- {k}: {v}" for k, v in FIT_DEFINITIONS.items())
+
+
 async def live_cv_screen(cv_text: str, platform: str, workflow: str) -> dict:
-    system = ("You screen CVs for the CDP Business User Champion programme. Extract relevant experience, "
-              "platforms, workflows and concrete examples, map evidence to the six criteria, identify missing "
-              "or ambiguous information and write targeted follow-up questions (max 4).\n"
-              + GUARDRAILS + "\n\n" + rubric_text())
+    system = ("You screen CVs of people nominated as CDP Business User Champions (colleagues who help others adopt "
+              "Common Digital Platforms). Rate the CV's fit for the role using ONLY the fit categories below. A CV shows "
+              "experience, not behaviour: judge relevant platform/workflow experience and concrete examples of supporting, "
+              "training or guiding colleagues. Quote short excerpts as evidence, list gaps, and suggest what phase 2 should "
+              "explore. Extract the current role, experience summary, platforms and workflows.\n"
+              + GUARDRAILS + "\n\n" + fit_rubric())
     prompt = (f"Nominated platform: {platform}. Nominated workflow: {workflow}.\n"
               + render_evidence({"platform": platform, "workflow": workflow,
                                  "sources": [{"id": "CV", "label": "Uploaded CV", "text": cv_text}]}))
-    return await _call_claude(system, prompt, CV_SCHEMA)
+    return normalise_fit(await _call_claude(system, prompt, CV_SCHEMA))
 
+
+def normalise_fit(raw: dict) -> dict:
+    from app.scoring import FIT_CATEGORIES
+    raw = raw or {}
+    cat = raw.get("fit_category")
+    ex = raw.get("extracted") or {}
+    return {
+        "fit_category": cat if cat in FIT_CATEGORIES else "Low Fit",
+        "summary": str(raw.get("summary") or ""),
+        "extracted": {"current_role": str(ex.get("current_role") or ""),
+                      "experience_summary": str(ex.get("experience_summary") or ""),
+                      "platforms": _as_list(ex.get("platforms")), "workflows": _as_list(ex.get("workflows"))},
+        "evidence": [e for e in (raw.get("evidence") or []) if isinstance(e, dict)][:8],
+        "gaps": _as_list(raw.get("gaps")),
+        "phase2_focus": _as_list(raw.get("phase2_focus")),
+    }
 
 async def live_pass(snapshot: dict, assessor: str) -> dict:
     system = ("You are an independent assessor for the CDP Business User Champion programme. "
@@ -303,18 +325,18 @@ UNSAFE = ["bypass it", "share my login", "share my password", "use my account", 
           "disable the control", "turn off the control", "just this once", "do it anyway", "override it",
           "give them my", "lend my"]
 CLARIFY_BANK = {
-    "credibility": "Please describe one specific occasion when colleagues changed how they worked after your support: what you did, who was involved, and what showed it helped.",
-    "empathy": "Please complete or expand the simulated coaching exchange: reply to each of the three user messages as you would in person.",
-    "reliability": "Please describe one specific issue you followed through: how you recorded it, who you referred it to, how you kept people updated, and how it was closed.",
-    "curiosity": "Please give a concrete example of a recent process change: how you learned it, what questions you asked, and how you checked your understanding.",
-    "workflow": "Please complete each part of the workflow walkthrough, including the exceptions you expect and exactly when you would stop and refer.",
-    "judgment": "Please explain, step by step, how you would respond to the manager's request, which control or policy applies, and what approved route you would offer.",
+    "credibility": "Back in Harbour district: describe step by step what you would do so Harbour's team can fix routing themselves next time, and what would show you that other districts were adopting the same approach.",
+    "empathy": "Please complete Kai's coaching exchange: reply to each of Kai's three messages as you would to a worried colleague.",
+    "reliability": "About your promise to Clinic district: explain exactly how you would record it, who you would update when resources were cut, and how you would make sure it was closed or handed over.",
+    "curiosity": "When the routing rules changed: what would you do first to understand the new rules, which questions would you ask, and how would you test your new plan before using it?",
+    "workflow": "Please complete every part of the Transit ticketing walkthrough, including the exceptions you expect and exactly when you would stop and refer.",
+    "judgment": "In the safety-lock stress moment: explain what you would say to the official, why the lock matters, and what approved route you would offer to get Grid back online safely.",
 }
 REMEDIATION_EXERCISE = (
-    "Approved remediation exercise: A senior manager asks a user to share their login so a colleague can approve "
-    "an urgent request while the approver is away. Write (1) what you would say to the manager, (2) what you "
-    "would say to the user, (3) which control or policy applies, and (4) the approved route to get the task "
-    "completed without bypassing the control.")
+    "Remediation exercise: during a city-wide outage, a district manager asks you to share your master access code "
+    "with a contractor so repairs can start before approval arrives. Write (1) what you would say to the manager, "
+    "(2) what you would say to the contractor, (3) which safety control applies, and (4) the approved route to get "
+    "repairs started without bypassing the control.")
 
 
 def _criterion_text(snapshot: dict, key: str) -> str:
@@ -411,25 +433,36 @@ def demo_moderate(snapshot: dict, a: dict, b: dict) -> dict:
 
 DEMO_PLATFORMS = ["ERP", "HR self-service", "e-procurement", "case management", "document management",
                   "finance", "CRM", "Power BI", "SharePoint", "service portal"]
+FIT_SIGNALS = {
+    "platform use": ["platform", "system", "portal", "erp", "self-service", "e-procurement", "case management", "sharepoint"],
+    "peer support": ["trained", "coached", "supported colleagues", "helped colleagues", "mentored", "guided", "onboarded", "showed"],
+    "follow-through": ["ticket", "logged", "followed up", "tracker", "escalated", "resolved"],
+    "learning": ["training", "sandbox", "certified", "course", "release", "learned"],
+}
 
 
 def demo_cv_screen(cv_text: str, platform: str, workflow: str) -> dict:
     t = cv_text.lower()
     lines = [l.strip() for l in cv_text.splitlines() if l.strip()]
-    platforms = [p for p in DEMO_PLATFORMS if p.lower() in t]
-    examples = [l for l in lines if re.search(r"\b(led|trained|supported|coached|introduced|improved|reduced|resolved)\b", l, re.I)][:5]
-    role = next((l for l in lines[:8] if re.search(r"officer|analyst|specialist|coordinator|manager|assistant|clerk|administrator", l, re.I)), "")
-    ce = {k: [l for l in lines if any(s in l.lower() for s in SIGNALS[k])][:3] for k in CRITERION_KEYS}
-    gaps = [f"No CV evidence found for: {c['name']}." for c in CRITERIA if not ce[c["key"]]]
-    fups = [{"criterion": c["key"], "question": CLARIFY_BANK[c["key"]]} for c in CRITERIA if not ce[c["key"]]][:3]
-    return {
+    found = {area: [l for l in lines if any(sig in l.lower() for sig in sigs)][:2] for area, sigs in FIT_SIGNALS.items()}
+    nominated = bool(platform) and platform.lower() in t
+    points = sum(1 for v in found.values() if v) + (1 if nominated else 0) + (1 if len(found["peer support"]) >= 2 else 0)
+    cat = "High Fit" if points >= 5 else "Moderate Fit" if points >= 3 else "Low Fit" if points >= 1 else "Doesn't Fit"
+    role = next((l for l in lines[:8] if re.search(r"officer|analyst|specialist|coordinator|manager|assistant|clerk|administrator|engineer", l, re.I)), "")
+    gaps = [f"No CV evidence of {area}." for area, v in found.items() if not v]
+    if not nominated:
+        gaps.append(f"No mention of the nominated platform ({platform or 'not stated'}).")
+    return normalise_fit({
+        "fit_category": cat,
+        "summary": f"[SIMULATED] {cat}: evidence found for {', '.join(a for a, v in found.items() if v) or 'none of the screening areas'}."
+                   " CV claims are unverified; phase 2 tests behaviour.",
         "extracted": {"current_role": role, "experience_summary": " ".join(lines[1:3])[:300],
-                      "platforms": platforms, "workflows": [workflow] if workflow and workflow.lower() in t else [],
-                      "examples": examples},
-        "criterion_evidence": ce, "gaps": gaps, "follow_up_questions": fups,
-        "summary": f"[SIMULATED] CV mentions {len(platforms)} relevant platform(s) and {len(examples)} concrete example(s). "
-                   "CV claims are supporting context only and are not treated as verified.",
-    }
+                      "platforms": [p for p in DEMO_PLATFORMS if p.lower() in t],
+                      "workflows": [workflow] if workflow and workflow.lower() in t else []},
+        "evidence": [{"area": a, "excerpt": l[:200]} for a, v in found.items() for l in v],
+        "gaps": gaps,
+        "phase2_focus": [f"Test {a} through the NEXUS scenarios." for a, v in found.items() if not v][:3],
+    })
 
 
 # ======================================================================== facade

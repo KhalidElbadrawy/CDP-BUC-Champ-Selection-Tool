@@ -2,31 +2,18 @@
 <html lang="{{ lang }}" dir="{{ dir }}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}{{ _("CDP Champion Nomination Tool") }}{% endblock %}</title>
+<title>{% block title %}CDP Champion Selection{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <a href="#main" class="skip">Skip to content</a>
-{% if ai_mode == "demo" or email_mode == "demo" %}
-<div class="banner demo" role="status"><strong>{{ _("Demo mode") }}:</strong>
-  {% if ai_mode == "demo" %}AI assessments are <strong>SIMULATED</strong> by a rule-based demo assessor.{% endif %}
-  {% if email_mode == "demo" %}Emails are logged to the outbox, not sent.{% endif %}
-  See README for live configuration.</div>
-{% endif %}
+{% if ai_mode == "demo" %}<div class="banner demo" role="status"><strong>{{ _("Demo mode") }}:</strong> AI results are <strong>SIMULATED</strong> by a rule-based demo assessor. Add an Anthropic API key for live AI.</div>{% endif %}
 <header class="top"><div class="wrap">
-  <a class="brand" href="/">{{ _("CDP Champion Nomination Tool") }}</a>
+  <a class="brand" href="{{ '/' if is_lead else '#' }}">CDP Champion Selection</a>
   <nav aria-label="Main">
-    {% if principal and principal.role == "lead" %}
-      <a href="/lead">{{ _("Central dashboard") }}</a><a href="/lead/entities">{{ _("Entities") }}</a>
-      <a href="/lead/settings">{{ _("Settings") }}</a><a href="/lead/templates">{{ _("Email templates") }}</a>
-      <a href="/lead/outbox">{{ _("Outbox") }}</a><a href="/lead/audit">{{ _("Audit trail") }}</a>
-    {% elif principal and principal.role == "focal" %}<a href="/entity">{{ _("Entity dashboard") }}</a>
-    {% elif principal and principal.role == "sponsor" %}<a href="/sponsor">{{ _("Sponsor decision") }}</a>
-    {% elif principal and principal.role == "nominee" %}<a href="/me">{{ _("Your application") }}</a>
-    {% elif principal and principal.role == "manager" %}<a href="/manager">{{ _("Manager commitment") }}</a>{% endif %}
-    {% if demo_launcher %}<a href="/demo">Demo launcher</a>{% endif %}
+    {% if is_lead %}<a href="/">Dashboard</a><a href="/settings">Settings</a><a href="/audit">Audit trail</a>{% endif %}
     {% if lang == "ar" %}<a href="/lang/en" lang="en">English</a>{% else %}<a href="/lang/ar" lang="ar">العربية</a>{% endif %}
-    {% if principal %}<a href="/logout">{{ _("Sign out") }}</a>{% endif %}
+    {% if is_lead %}<a href="/logout">Sign out</a>{% endif %}
   </nav>
 </div></header>
 <main id="main" class="wrap">
@@ -34,5 +21,5 @@
   {% if err %}<div class="flash err" role="alert">{{ err }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>
-<footer>CDP Change Programme · Assessment weights and thresholds are proposed settings requiring pilot validation.</footer>
+<footer>CDP Change Programme · AI results are provisional. Weights, thresholds and fit categories are proposed settings to calibrate in a pilot.</footer>
 </body></html>

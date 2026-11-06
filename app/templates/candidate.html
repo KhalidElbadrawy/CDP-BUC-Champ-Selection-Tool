@@ -1,0 +1,85 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ c.name }} · CDP Champion Selection{% endblock %}{% block content %}
+<p><a href="/i/{{ c.initiative_id }}">← {{ c.initiative_name }}</a></p>
+<h1>{{ c.name }} <span class="small muted">{{ c.ref }}</span></h1>
+<div class="card"><div class="grid g4">
+<div><div class="small muted">Status</div>{{ m.status_pill(c.status) }}</div>
+<div><div class="small muted">CV fit</div>{{ m.fit_pill(c.fit_final) }}</div>
+<div><div class="small muted">Assessment</div>{{ m.outcome_pill(c.outcome) }}</div>
+<div><div class="small muted">Entity</div>{{ c.entity_name }}{% if c.department %} · {{ c.department }}{% endif %}</div></div>
+{% if c.last_error %}<div class="warnbox">{{ c.last_error }}</div>{% endif %}
+<div class="actions">{% if asmt and asmt.result %}<a class="btn" href="/c/{{ c.id }}/report">Open assessment report</a>{% endif %}</div>
+</div>
+
+<div class="grid g2">
+<section class="card"><h2>Nomination</h2>
+<dl class="dl">
+<dt>Email</dt><dd>{{ c.email or "—" }}</dd><dt>Platform / workflow</dt><dd>{{ c.platform or "—" }} / {{ c.workflow or "—" }}</dd>
+<dt>Route</dt><dd>{{ c.route or "—" }}{% if c.nominator_name %} · by {{ c.nominator_name }}{% endif %}</dd>
+<dt>Line manager</dt><dd>{{ c.manager_name or "—" }}{% if c.manager_email %} ({{ c.manager_email }}){% endif %}</dd>
+<dt>Reason</dt><dd>{{ c.reason or "—" }}</dd>
+<dt>Consent to AI screening</dt><dd>{{ "Recorded" if c.consent_screening else "Not recorded" }}</dd>
+<dt>Consent before assessment</dt><dd>{{ c.consent_assessment_at[:10] if c.consent_assessment_at else "Not yet" }}</dd></dl>
+{% if not c.consent_screening and c.status != "Withdrawn" %}<form method="post" action="/c/{{ c.id }}/consent"><input type="hidden" name="csrf" value="{{ csrf }}">
+<p class="small">If the nominee has agreed outside the survey (for example by email), record it here.</p><button class="small secondary">Record consent to AI screening</button></form>{% endif %}
+</section>
+
+<section class="card"><h2>CV</h2>
+{% if doc %}<p><a href="/doc/{{ doc.id }}">{{ doc.filename }}</a> · {% if doc.extract_status == "ok" %}<span class="pill ok">text read</span>{% else %}<span class="pill warn">{{ doc.extract_status }}</span> {{ doc.extract_error or "" }}{% endif %}</p>{% else %}<p class="muted">No CV uploaded.</p>{% endif %}
+<form method="post" action="/c/{{ c.id }}/cv" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="file" name="file" accept=".pdf,.docx" required aria-label="CV file"><div class="actions"><button class="small secondary">{{ "Replace CV" if doc else "Upload CV" }}</button></div></form>
+{% if c.status == "CV Uploaded" and c.consent_screening %}<form method="post" action="/c/{{ c.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">Run AI fit rating</button></form>{% endif %}
+</section></div>
+
+<section class="card"><h2>AI CV fit rating</h2>
+{% if screen %}{% set r = screen.result %}
+<p>{{ m.mode_pill(screen.mode) }} AI rating: {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %} → your rating: {{ m.fit_pill(c.fit_final) }} <span class="small">Reason: {{ c.fit_override_reason }}</span>{% endif %}</p>
+<p>{{ r.summary }}</p>
+<div class="grid g2"><div><h3>Evidence in the CV</h3><ul class="small">{% for e in r.evidence %}<li><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% else %}<li>None found.</li>{% endfor %}</ul></div>
+<div><h3>Gaps</h3><ul class="small">{% for g in r.gaps %}<li>{{ g }}</li>{% else %}<li>None noted.</li>{% endfor %}</ul>
+{% if r.phase2_focus %}<h3>What phase 2 should explore</h3><ul class="small">{% for g in r.phase2_focus %}<li>{{ g }}</li>{% endfor %}</ul>{% endif %}</div></div>
+<p class="small muted">A CV shows experience, not behaviour. This rating is a screening step; the phase 2 assessment tests behaviour.</p>
+{% if c.status in ("Shortlisted", "Not Shortlisted") %}<details><summary>Change the fit category</summary>
+<form method="post" action="/c/{{ c.id }}/fit" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div><label for="cat">Fit category</label><select id="cat" name="category">{% for f in scoring.FIT_CATEGORIES %}<option {{ "selected" if f == c.fit_final }}>{{ f }}</option>{% endfor %}</select></div>
+<div><label for="rs">Reason *</label><input id="rs" type="text" name="reason" required></div><div><button class="secondary">Save category</button></div></form></details>{% endif %}
+{% else %}<p class="muted">Not yet rated.</p>{% endif %}
+</section>
+
+<section class="card" id="link"><h2>Phase 2 assessment link</h2>
+{% if new_link %}<div class="notice"><strong>New personal link</strong> (shown only now; copy it into your email):
+<div class="copyrow"><input id="nl" type="text" readonly value="{{ new_link }}" aria-label="Assessment link"><button type="button" class="small" onclick="navigator.clipboard.writeText(document.getElementById('nl').value).then(()=>this.textContent='Copied',()=>document.getElementById('nl').select())">Copy</button></div></div>{% endif %}
+{% if link %}<p class="small">Active link ending …{{ link.raw_hint }} · expires {{ link.expires_at[:10] }}{% if link.last_used_at %} · last opened {{ link.last_used_at[:10] }}{% endif %}</p>{% endif %}
+{% if c.status in wf.INVITABLE %}<div class="actions">
+<form method="post" action="/c/{{ c.id }}/link"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">{{ "Create a new link" if link else "Create link" }}</button></form>
+{% if link %}<form method="post" action="/c/{{ c.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">Cancel link</button></form>{% endif %}</div>
+<form method="post" action="/c/{{ c.id }}/time" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="xt" class="small">Extra time for the timed game (reasonable adjustment)</label>
+<select id="xt" name="factor" style="max-width:120px">{% for f in [1.0, 1.25, 1.5, 2.0] %}<option value="{{ f }}" {{ "selected" if c.extra_time == f }}>{{ f }}×</option>{% endfor %}</select><button class="small secondary">Save</button></form>
+{% else %}<p class="muted small">Links are available once the candidate is shortlisted.</p>{% endif %}
+</section>
+
+<section class="card"><h2>Assessment</h2>
+{% set detail = False %}{% include "_assessment.html" %}
+{% if c.status == "Assessing" %}<p class="small">AI assessment in progress.</p><form method="post" action="/c/{{ c.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">Retry AI assessment</button></form>{% endif %}
+{% if clarifications %}<details><summary>Follow-up questions ({{ clarifications|length }})</summary><ul class="small">{% for q in clarifications %}<li>Round {{ q.round_no }} · {{ q.criterion }} · {{ q.kind }}: {{ q.question }}<br><em>{{ q.response or "Awaiting answer" }}</em></li>{% endfor %}</ul></details>{% endif %}
+{% if c.status in wf.INVITABLE %}<details><summary>Enter answers from the offline document</summary>
+<p class="small muted">For candidates who could not use the link: paste their written answers to the NEXUS text scenarios. They are assessed the same way.</p>
+<form method="post" action="/c/{{ c.id }}/offline"><input type="hidden" name="csrf" value="{{ csrf }}">{% include "_scenario_fields.html" %}
+<div class="actions"><button>Save and assess</button></div></form></details>{% endif %}
+</section>
+
+{% if c.status in ("Assessed", "Approved", "Not Approved") %}<section class="card"><h2>Decision</h2>
+{% if c.decision %}<p>{{ "Approved" if c.decision == "approved" else "Not approved" }} on {{ c.decided_at[:10] }}: {{ c.decision_rationale }}</p>{% endif %}
+<form method="post" action="/c/{{ c.id }}/decide"><input type="hidden" name="csrf" value="{{ csrf }}">
+<fieldset><legend>Decision</legend><label class="radio"><input type="radio" name="decision" value="approved" required {{ "checked" if c.decision == "approved" }}> Approve as champion</label>
+<label class="radio"><input type="radio" name="decision" value="not_approved" {{ "checked" if c.decision == "not_approved" }}> Not approve</label></fieldset>
+<label for="ra">Rationale *</label><textarea id="ra" name="rationale" required style="min-height:70px">{{ c.decision_rationale or "" }}</textarea>
+<div class="actions"><button>{{ "Update decision" if c.decision else "Record decision" }}</button></div></form></section>{% endif %}
+
+<details class="card"><summary>Records and history</summary>
+<div class="grid g2">
+{% if c.status != "Withdrawn" %}<form method="post" action="/c/{{ c.id }}/withdraw"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="wr">Withdraw candidate</label><input id="wr" type="text" name="reason" placeholder="Reason" required><div class="actions"><button class="small danger">Withdraw</button></div></form>{% endif %}
+<form method="post" action="/c/{{ c.id }}/delete-docs"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="dr">Delete CV and stored evidence</label><input id="dr" type="text" name="reason" placeholder="Reason" required><div class="actions"><button class="small danger">Delete documents</button></div></form></div>
+{% if source %}<h3>Original survey row</h3><dl class="dl small">{% for k, v in source.items() if v %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
+<h3>Audit trail</h3><div class="table-wrap"><table class="small"><tbody>{% for e in audit %}<tr><td>{{ e.at[:16]|replace("T"," ") }}</td><td>{{ e.action }}</td><td>{{ e.actor }}</td><td>{{ e.detail_json }}</td></tr>{% endfor %}</tbody></table></div>
+</details>
+{% endblock %}

@@ -1,30 +1,24 @@
 {% extends "base.html" %}{% block content %}
-<h1>{{ _("Settings") }}</h1>
-<div class="card"><h2>Service configuration</h2>
-<p>AI assessment: <strong>{{ ai_mode }}</strong> — {{ ai_reason }} · Email: <strong>{{ email_mode }}</strong>{% if email_mode == "demo" %} (no SMTP_HOST configured; messages go to the outbox){% endif %}.</p>
-<p class="small muted">To enable live AI set <code>ANTHROPIC_API_KEY</code> and <code>CDP_AI_MODE=live</code>; for email set <code>SMTP_HOST</code> etc. in <code>.env</code> on the server.</p></div>
-
-<div class="card"><h2>Nomination rounds</h2>
-<table>{% for r in rounds %}<tr><td>{{ r.name }}</td><td>{{ r.status }}</td><td>{{ r.opens_on }} → {{ r.closes_on or "open-ended" }}</td><td>{% if r.status=="open" %}<form method="post" action="/lead/rounds"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="close"><input type="hidden" name="round_id" value="{{ r.id }}"><button class="small secondary">Close</button></form>{% endif %}</td></tr>{% endfor %}</table>
-<form method="post" action="/lead/rounds" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="open">
-<div><label for="rn">New round name</label><input id="rn" type="text" name="name" required></div><div><label for="rc">Closes on</label><input id="rc" type="date" name="closes_on"></div><div><label>&nbsp;</label><button>Launch round (closes current)</button></div></form></div>
-
-<form method="post" action="/lead/settings"><input type="hidden" name="csrf" value="{{ csrf }}">
-<div class="card"><h2>Assessment configuration <span class="pill warn">{{ cfg.label }}</span></h2>
-<p>Current version: <strong>v{{ version }}</strong>. Each assessment records the version it used. Weights must total 100.</p>
+<h1>Settings</h1>
+<div class="card"><h2>Service</h2><p>AI: <strong>{{ ai_mode }}</strong>. {{ ai_reason }}</p>
+<p class="small muted">Live AI needs <code>ANTHROPIC_API_KEY</code> and <code>CDP_AI_MODE=live</code> in the hosting settings. The Change Lead password is <code>CDP_LEAD_PASSWORD</code>.</p></div>
+<form method="post" action="/settings"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="card"><h2>Assessment scorecard <span class="pill warn">{{ cfg.label }}</span></h2>
+<p class="small">Current version: v{{ version }}. Each assessment records the version it used. Weights must total 100.</p>
 <div class="table-wrap"><table><thead><tr><th>Criterion</th><th>Weight (%)</th><th>Minimum rating</th></tr></thead><tbody>
-{% for c in scoring.CRITERIA %}<tr><td>{{ c.name }}</td><td><input type="number" step="0.5" min="0" max="100" name="w_{{ c.key }}" value="{{ cfg.weights[c.key] }}" aria-label="Weight {{ c.name }}"></td>
-<td><select name="min_{{ c.key }}" aria-label="Minimum {{ c.name }}"><option value="">none</option>{% for i in range(1,6) %}<option {{ "selected" if cfg.minimums.get(c.key)==i }}>{{ i }}</option>{% endfor %}</select></td></tr>{% endfor %}
+{% for c in scoring.CRITERIA %}<tr><td>{{ c.name }}</td><td><input type="number" step="0.5" min="0" max="100" name="w_{{ c.key }}" value="{{ cfg.weights[c.key] }}" aria-label="Weight for {{ c.name }}"></td>
+<td><select name="min_{{ c.key }}" aria-label="Minimum for {{ c.name }}"><option value="">none</option>{% for i in range(1,6) %}<option {{ "selected" if cfg.minimums.get(c.key)==i }}>{{ i }}</option>{% endfor %}</select></td></tr>{% endfor %}
 </tbody></table></div>
 <div class="grid g3">
 <div><label for="ot">Overall threshold (/100)</label><input id="ot" type="number" name="overall_threshold" value="{{ cfg.overall_threshold }}"></div>
-<div><label for="mcr">Max clarification / reassessment rounds</label><input id="mcr" type="number" name="max_clarification_rounds" value="{{ cfg.max_clarification_rounds }}"></div>
-<div><label for="rt">Retention period (days, closed records)</label><input id="rt" type="number" name="retention_days" value="{{ cfg.retention_days }}"></div>
-<div><label for="mh">Minimum hours between reminders</label><input id="mh" type="number" name="min_hours_between" value="{{ cfg.reminders.min_hours_between }}"></div>
-<div><label for="mp">Maximum reminders per stage</label><input id="mp" type="number" name="max_per_stage" value="{{ cfg.reminders.max_per_stage }}"></div>
+<div><label for="mc">Follow-up rounds allowed</label><input id="mc" type="number" name="max_clarification_rounds" value="{{ cfg.max_clarification_rounds }}"></div>
+<div><label for="gm">Game time limit (minutes)</label><input id="gm" type="number" name="game_minutes" value="{{ cfg.game_minutes }}"></div>
+<div><label for="ld">Assessment link valid for (days)</label><input id="ld" type="number" name="link_days" value="{{ cfg.link_expiry_days.candidate }}"></div>
+<div><label for="rd">Keep CVs of closed records for (days)</label><input id="rd" type="number" name="retention_days" value="{{ cfg.retention_days }}"></div>
 </div>
-<h3>Link expiry (days)</h3><div class="grid g4">{% for role, d in cfg.link_expiry_days.items() %}<div><label for="ex{{role}}">{{ role }}</label><input id="ex{{role}}" type="number" name="exp_{{ role }}" value="{{ d }}"></div>{% endfor %}</div>
 <label for="nt">Change note *</label><input id="nt" type="text" name="note" required placeholder="Why is this changing?">
-<div class="actions"><button>Save as new version</button></div></div></form>
-<div class="card"><h2>Configuration history</h2><table>{% for h in history %}<tr><td>v{{ h.version }}</td><td>{{ h.created_at[:16]|replace("T"," ") }}</td><td>{{ h.created_by }}</td><td>{{ h.note }}</td></tr>{% endfor %}</table></div>
+<div class="actions"><button>Save as a new version</button></div></div></form>
+<div class="card"><h2>Fit categories (CV screening)</h2><ul>{% for k, v in scoring.FIT_DEFINITIONS.items() %}<li><strong>{{ k }}</strong>: {{ v }}</li>{% endfor %}</ul>
+<p class="small muted">High and Moderate Fit are shortlisted for phase 2.</p></div>
+<div class="card"><h2>Settings history</h2><table>{% for h in history %}<tr><td>v{{ h.version }}</td><td>{{ h.created_at[:16]|replace("T"," ") }}</td><td>{{ h.note }}</td></tr>{% endfor %}</table></div>
 {% endblock %}

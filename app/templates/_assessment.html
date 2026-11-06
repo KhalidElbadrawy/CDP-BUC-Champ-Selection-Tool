@@ -1,0 +1,14 @@
+{% if asmt and asmt.result %}
+<p>{{ m.mode_pill(asmt.mode) }} {{ m.outcome_pill(asmt.result.final_outcome or asmt.result.outcome) }} <strong>{{ asmt.result.recommendation }}</strong></p>
+{{ m.score_table(asmt.result, asmt.moderation, detail) }}
+{% if detail and asmt.pass_a %}<details><summary>Evidence behind each rating (two independent AI assessments)</summary>
+{% for cr in scoring.CRITERIA %}{% set pa = asmt.pass_a.criteria[cr.key] %}{% set pb = asmt.pass_b.criteria[cr.key] %}
+<h3>{{ cr.name }}</h3><div class="cols">{% for label, p in [("Assessment A", pa), ("Assessment B", pb)] %}
+<div class="notice small"><strong>{{ label }}: {{ p.rating if p.rating is not none else "Not yet assessed" }}</strong>{% if p.rating_basis %} ({{ p.rating_basis }}){% endif %} · evidence {{ p.evidence_strength }}<br>{{ p.reasoning }}
+{% for e in p.excerpts %}<br>“{{ e.text }}” <em>[{{ e.source }}]</em>{% endfor %}
+{% if p.missing_evidence %}<br>Missing: {{ p.missing_evidence|join("; ") }}{% endif %}
+{% if p.contradictions %}<br>Contradictions: {{ p.contradictions|join("; ") }}{% endif %}
+{% if p.unsafe %}<br><span class="pill bad">possible safety concern{{ " (serious)" if p.unsafe_serious }}</span> {{ p.unsafe_note or "" }}{% endif %}</div>{% endfor %}</div>{% endfor %}
+</details>{% endif %}
+{% elif asmt and asmt.status == "failed" %}<div class="warnbox">The last AI assessment attempt failed: {{ asmt.error }}</div>
+{% else %}<p class="muted">No assessment yet.</p>{% endif %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block content %}
+<h1>Dashboard</h1>
+<form method="get" class="filters card" aria-label="Filters">
+  <div><label for="fi">Initiative</label><select id="fi" name="initiative"><option value="">All initiatives</option>{% for i in initiatives %}<option value="{{ i.id }}" {{ "selected" if fi == i.id }}>{{ i.name }}</option>{% endfor %}</select></div>
+  <div><label for="fe">Entity</label><select id="fe" name="entity"><option value="">All entities</option>{% for e in entities %}<option value="{{ e.id }}" {{ "selected" if fe == e.id }}>{{ e.name }}</option>{% endfor %}</select></div>
+  <div><label for="fc">Fit category</label><select id="fc" name="category"><option value="">All categories</option>{% for c in d.categories %}<option {{ "selected" if fc == c }}>{{ c }}</option>{% endfor %}</select></div>
+  <div class="filter-actions"><button>Apply</button>{% if fi or fe or fc %}<a class="btn secondary" href="/">Clear</a>{% endif %}</div>
+</form>
+
+<div class="kpis">
+  <div class="stat"><div class="n">{{ d.entities }}</div><div class="l">Entities</div></div>
+  <div class="stat"><div class="n">{{ d.champions }}</div><div class="l">Champions nominated</div></div>
+  <div class="stat fit-ok"><div class="n">{{ d.by_cat["High Fit"] }}</div><div class="l">High Fit</div></div>
+  <div class="stat fit-info"><div class="n">{{ d.by_cat["Moderate Fit"] }}</div><div class="l">Moderate Fit</div></div>
+  <div class="stat fit-warn"><div class="n">{{ d.by_cat["Low Fit"] }}</div><div class="l">Low Fit</div></div>
+  <div class="stat fit-bad"><div class="n">{{ d.by_cat["Doesn't Fit"] }}</div><div class="l">Doesn't Fit</div></div>
+  <div class="stat stat-strong"><div class="n">{{ d.approved }}</div><div class="l">Approved champions</div></div>
+</div>
+{% if d.by_cat["Not yet rated"] %}<p class="muted small">{{ d.by_cat["Not yet rated"] }} nominee(s) not yet rated.</p>{% endif %}
+
+<div class="card"><h2>By entity</h2>
+<div class="table-wrap"><table class="num">
+<thead><tr><th>Entity</th><th>Nominated</th><th>High</th><th>Moderate</th><th>Low</th><th>Doesn't Fit</th><th>Not rated</th><th>Assessed</th><th>Approved</th></tr></thead>
+<tbody>{% for name, e in d.by_entity.items() %}<tr><td>{{ name }}</td><td>{{ e.total }}</td><td>{{ e["High Fit"] }}</td><td>{{ e["Moderate Fit"] }}</td><td>{{ e["Low Fit"] }}</td><td>{{ e["Doesn't Fit"] }}</td><td>{{ e["Not yet rated"] }}</td><td>{{ e.assessed }}</td><td><strong>{{ e.approved }}</strong></td></tr>
+{% else %}<tr><td colspan="9">No nominees match these filters.</td></tr>{% endfor %}</tbody>
+{% if d.by_entity %}<tfoot><tr><th>Approved by category</th><td></td><td>{{ d.approved_by_cat["High Fit"] }}</td><td>{{ d.approved_by_cat["Moderate Fit"] }}</td><td>{{ d.approved_by_cat["Low Fit"] }}</td><td>{{ d.approved_by_cat["Doesn't Fit"] }}</td><td>{{ d.approved_by_cat["Not yet rated"] }}</td><td></td><td><strong>{{ d.approved }}</strong></td></tr></tfoot>{% endif %}
+</table></div>
+<div class="actions"><a class="btn secondary small" href="/export.csv?initiative={{ fi or '' }}&entity={{ fe or '' }}&category={{ fc or '' }}">Export register (CSV)</a>
+<form method="post" action="/jobs"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary small" title="Retry failed AI work and apply the retention policy">Run scheduled jobs now</button></form></div>
+</div>
+
+<div class="card"><h2>Initiatives</h2>
+<div class="init-list">{% for i in initiatives %}
+<a class="init-row" href="/i/{{ i.id }}">
+  <div class="init-main"><strong>{{ i.name }}</strong>{% if i.platform %} <span class="muted small">· {{ i.platform }}</span>{% endif %}{% if i.status == "closed" %} <span class="pill">closed</span>{% endif %}
+  <div class="small muted">{{ i.count }} nominee(s) · {% if i.current %}Next: step {{ i.current.no }}, {{ i.current.title }}{% else %}All steps complete{% endif %}</div></div>
+  <div class="init-prog"><div class="bar" aria-hidden="true"><span style="width:{{ (100 * i.done / steps_total)|round|int }}%"></span></div><span class="small">{{ i.done }} of {{ steps_total }} steps</span></div>
+</a>{% else %}<p class="muted">No initiatives yet. Create the first one below.</p>{% endfor %}</div>
+<details {{ "open" if not initiatives }}><summary>Create an initiative</summary>
+<form method="post" action="/initiatives" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div><label for="in">Name *</label><input id="in" type="text" name="name" required placeholder="e.g. ERP Release 3"></div>
+<div><label for="ip">Platform</label><input id="ip" type="text" name="platform" placeholder="e.g. ERP"></div>
+<div><label for="id">Description</label><input id="id" type="text" name="description"></div>
+<div><button>Create initiative</button></div></form></details>
+</div>
+
+<div class="card"><h2>Nominees{% if fi or fe or fc %} (filtered){% endif %}</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Name</th><th>Entity</th><th>Initiative</th><th>CV fit</th><th>Status</th><th>Outcome</th></tr></thead>
+<tbody>{% for r in d.rows[:200] %}<tr><td><a href="/c/{{ r.id }}">{{ r.name }}</a><br><span class="small muted">{{ r.department or "" }}</span></td><td>{{ r.entity_name }}</td><td class="small">{{ r.initiative_name }}</td><td>{{ m.fit_pill(r.fit_final) }}</td><td>{{ m.status_pill(r.status) }}</td><td>{{ m.outcome_pill(r.outcome) }}</td></tr>
+{% else %}<tr><td colspan="6">No nominees yet.</td></tr>{% endfor %}</tbody></table></div>
+{% if d.rows|length > 200 %}<p class="small muted">Showing the first 200. Use the filters or the export to see the rest.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% for cr in scoring.CRITERIA %}<fieldset><legend>{{ _(cr.name) }}</legend>
+{% if cr.task == "simulation" %}<p>{{ cr.question }}</p>
+{% for u in scoring.EMPATHY_SIMULATION %}<div class="sim-user"><b>Kai</b>{{ u[5:] }}</div>
+<label for="a_empathy_{{ loop.index0 }}" class="small">{{ _("Your reply") }}</label><textarea id="a_empathy_{{ loop.index0 }}" name="a_empathy_{{ loop.index0 }}" style="min-height:70px">{{ answers.get("empathy_" ~ loop.index0, "") }}</textarea>{% endfor %}
+{% elif cr.task == "walkthrough" %}<p>{{ cr.question }}</p>
+{% for f, q in scoring.WORKFLOW_FIELDS %}<label for="a_workflow_{{ f }}" class="small">{{ q }}</label><textarea id="a_workflow_{{ f }}" name="a_workflow_{{ f }}" style="min-height:70px">{{ answers.get("workflow_" ~ f, "") }}</textarea>{% endfor %}
+{% else %}<label for="a_{{ cr.key }}">{{ cr.question }}</label><textarea id="a_{{ cr.key }}" name="a_{{ cr.key }}">{{ answers.get(cr.key, "") }}</textarea>{% endif %}
+</fieldset>{% endfor %}

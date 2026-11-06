@@ -45,6 +45,7 @@ class Settings:
         )
         self.model = e("CDP_MODEL", "claude-sonnet-5-5")
 
+        self.lead_password = e("CDP_LEAD_PASSWORD", "")
         self.smtp_host = e("SMTP_HOST", "")
         self.smtp_port = int(e("SMTP_PORT", "587") or 587)
         self.smtp_user = e("SMTP_USER", "")

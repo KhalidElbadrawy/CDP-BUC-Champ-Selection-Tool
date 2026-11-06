@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}NEXUS · {{ _("CDP Champion assessment") }}{% endblock %}{% block content %}
+<div class="hero-nexus"><div class="eyebrow">{{ _("CDP Champion assessment") }}</div>
+<h1>NEXUS: {{ _("Reconnect the City") }}</h1>
+<p>{{ _("Six districts of the city have lost their connections. As a city champion, your job is to restore reliable services, help districts run on their own, and keep essential safety controls in place.") }}</p></div>
+
+{% if c.status == "Invited" or (c.status == "In Assessment" and not c.consent_assessment_at) %}
+<div class="card"><h2>{{ _("Before you start") }}</h2>
+<p>{{ _("Hello") }} {{ c.name }}. {{ _("You have been shortlisted as a possible CDP Business User Champion. This assessment asks how you would handle situations in the NEXUS city. There are no trick questions; answer as you would really act.") }}</p>
+<ul><li>{{ _("Your answers are assessed by AI against a published scorecard, and the CDP Change Lead makes the final decision.") }}</li>
+<li>{{ _("It takes about 35 to 45 minutes. You can save and come back to this link.") }}</li>
+<li>{{ _("Your answers are seen only by the CDP Change Lead.") }}</li></ul>
+<form method="post" action="/assess/consent"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label class="radio"><input type="checkbox" name="consent" value="yes" required> {{ _("I agree to take part and for my answers to be assessed by AI.") }}</label>
+<div class="actions"><button>{{ _("Start") }}</button></div></form></div>
+
+{% elif c.status == "In Assessment" %}
+<form method="post" action="/assess/save" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
+<h2>{{ _("The city scenarios") }}</h2><p class="muted">{{ _("Answer each scenario in your own words. Specific, practical answers help most.") }}</p>
+{% include "_scenario_fields.html" %}
+<div class="actions"><button name="action" value="save" class="secondary">{{ _("Save and continue later") }}</button><button name="action" value="submit">{{ _("Submit my answers") }}</button></div>
+<p class="small muted">{{ _("After you submit, you may be asked one or two short follow-up questions on this same link.") }}</p></form>
+
+{% elif c.status == "Follow-up Requested" and clarifications %}
+<form method="post" action="/assess/clarify" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
+<h2>{{ _("A few follow-up questions") }}</h2><p>{{ _("Thank you for your answers. To complete your assessment, please answer these questions.") }}</p>
+{% for q in clarifications %}<fieldset><legend>{{ _("Question") }} {{ loop.index }}</legend><label for="cl_{{ q.id }}">{{ q.question }}</label><textarea id="cl_{{ q.id }}" name="cl_{{ q.id }}" required></textarea></fieldset>{% endfor %}
+<div class="actions"><button>{{ _("Submit") }}</button></div></form>
+
+{% else %}
+<div class="card"><h2>{{ _("Thank you") }}</h2><p>{{ _("Your assessment has been submitted. The CDP Change Lead will be in touch about the next steps.") }}</p></div>
+{% endif %}
+{% endblock %}

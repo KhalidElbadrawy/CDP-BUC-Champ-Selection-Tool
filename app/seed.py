@@ -1,185 +1,177 @@
-"""Fictional demonstration data. Run:  python -m app.seed   (resets the local database).
+"""Fictional demonstration data for version 2. Run:  python -m app.seed   (resets the local database).
 
-Every record is fictional. Assessments are produced by running the real workflow with the
-DEMO assessor, so they are stored with mode="demo" and shown as SIMULATED.
+All people are fictional. AI results come from the labelled DEMO assessor (SIMULATED).
+Also writes samples/nominations_sample.csv, a Microsoft Forms-style export you can import yourself.
 """
 from __future__ import annotations
 
 import asyncio
+import csv
 import io
 import shutil
-from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import docx
 
-from app import config, db, workflow
+from app import config, db, imports, workflow
+from app.config import BASE_DIR
 from app.main import startup
 
-ENTITIES = [
-    ("MDS", "Ministry of Digital Services", "وزارة الخدمات الرقمية", 3, "HR self-service, e-procurement, document management"),
-    ("DMA", "Department of Municipal Affairs", "دائرة الشؤون البلدية", 3, "case management, e-procurement"),
-    ("HSA", "Health Services Authority", "هيئة الخدمات الصحية", 4, "HR self-service, finance, case management"),
-    ("EDC", "Education Council", "مجلس التعليم", 2, "document management, HR self-service"),
-    ("TRA", "Transport Regulatory Authority", "هيئة تنظيم النقل", 2, "service portal, e-procurement"),
-    ("PFD", "Public Finance Department", "دائرة المالية العامة", 3, "finance, e-procurement"),
+HEADER = ["ID", "Start time", "Completion time", "Email", "Name", "Nominee name", "Nominee work email", "Entity",
+          "Department", "Platform", "Workflow", "Nomination type", "Why are you nominating them?",
+          "Line manager name", "Line manager email", "Has the nominee agreed to AI screening of their CV?"]
+
+# (name, entity, department, platform, workflow, route, consent, cv_tier)
+PEOPLE = [
+    ("Aisha Rahman", "Ministry of Digital Services", "Corporate Services", "ERP", "Purchase requisitions", "Self", "Yes", "high"),
+    ("Omar Haddad", "Department of Municipal Affairs", "Permits", "ERP", "Supplier onboarding", "Peer", "Yes", "high"),
+    ("Layla Nasser", "Health Services Authority", "Finance", "ERP", "Expense claims", "Manager", "Yes", "high"),
+    ("Yousef Karim", "Education Council", "Procurement", "ERP", "Purchase requisitions", "Peer", "Yes", "moderate"),
+    ("Mariam Saleh", "Public Finance Department", "Accounts Payable", "ERP", "Invoice approval", "Manager", "Yes", "high"),
+    ("Khalid Mansour", "Transport Regulatory Authority", "Licensing", "ERP", "Purchase requisitions", "Self", "Yes", "high"),
+    ("Hassan Ali", "Department of Municipal Affairs", "Planning", "ERP", "Budget transfers", "Peer", "Yes", "moderate"),
+    ("Sara Ibrahim", "Ministry of Digital Services", "HR", "ERP", "Leave requests", "Self", "Yes", "moderate"),
+    ("Noor Jaber", "Health Services Authority", "Records", "ERP", "Purchase requisitions", "Peer", "Yes", "low"),
+    ("Rami Aziz", "Public Finance Department", "Treasury", "ERP", "Payments", "Manager", "Yes", "low"),
+    ("Dana Khoury", "Education Council", "Facilities", "ERP", "Work orders", "Peer", "Yes", "none"),
+    ("Fadi Tawil", "Transport Regulatory Authority", "Customer Service", "ERP", "Refunds", "Self", "No", "moderate"),
+    ("Huda Saeed", "Ministry of Digital Services", "Legal", "ERP", "Contract approvals", "Manager", "Yes", "high"),
+    ("Samir Odeh", "Health Services Authority", "Pharmacy", "ERP", "Stock requests", "Peer", "Yes", "moderate"),
 ]
 
-STRONG = {
-    "credibility": ("When our team moved leave requests to the HR self-service platform, several colleagues kept emailing paper "
-                    "forms. Colleagues started coming to me for help, so I showed them the new steps at their desks and coached two "
-                    "of them to demonstrate it to others. I collected feedback after two weeks and adopted their suggestions into a "
-                    "one-page guide. We measured the paper forms received: they reduced from about forty a month to five, and the team "
-                    "reported fewer errors in leave balances. Three colleagues started using the platform without help."),
-    "empathy_0": "I understand — twelve years is a long time and change can feel frustrating. Let's look at it together, step by step. "
-                 "The new platform removes the retyping you do at month end. Does that make sense so far?",
-    "empathy_1": "Don't worry, you haven't broken anything — nothing is broken. The message means one required field is empty. "
-                 "Let me show you where it is. Which part of the form were you on?",
-    "empathy_2": "I'd rather we do it together so you feel confident. Try it while I watch, and we'll write short notes in your own "
-                 "words so you can repeat it next time.",
-    "reliability": ("A colleague could not submit purchase requisitions for a week because of an approval routing error. I logged a "
-                    "ticket with the service desk, recorded the details in our team tracker, and confirmed the impact with the finance "
-                    "owner. When the fix was delayed I sent an update to the affected users and explained the approved interim route. "
-                    "I followed up every two days, escalated to the platform owner when the ticket passed its target date, and checked "
-                    "back with the colleague after the fix to confirm it worked before the ticket was closed."),
-    "curiosity": ("When the expense approval process changed last quarter, I read the release notes and the guidance, then practised in "
-                  "the training sandbox. I wrote down each question I could not answer and asked the process owner, which showed my "
-                  "assumption about delegation limits was wrong. I compared the new steps with the old checklist, tested two example "
-                  "claims, and verified my understanding by walking a colleague through it and checking the result with finance."),
-    "workflow_purpose": "Purchase requisitions let a department request goods; procurement and finance rely on accurate cost codes and approvals to commit budget.",
-    "workflow_steps": "Create the requisition, choose the catalogue item, add the cost centre, attach the quote, submit for approval, and track each approval step until a purchase order is raised.",
-    "workflow_exceptions": "Common exceptions are a rejected requisition because of a wrong cost code, a missing attachment, an approver on leave, or a supplier validation error.",
-    "workflow_stop_refer": "I stop and refer when it is an access problem (access request to the administrator), a system error or defect (service desk ticket), or a policy question such as splitting orders (procurement policy owner).",
-    "judgment": ("I would politely decline and explain why I cannot bypass the control: the approval control protects public funds and "
-                 "the user's own accountability. I would check whether this is a skill gap, an access problem or a defect. If access is "
-                 "missing we raise an access request; if it is a defect I log it with the service desk; if the deadline is critical I "
-                 "escalate to the control owner for the approved route, such as a delegated approver. I record what happened and protect "
-                 "any personal information in the request."),
+ANSWERS = {
+    "credibility": ("I would not keep fixing Harbour's routing myself. I would sit with the Harbour team, showed them how to read the "
+                    "routing map, then coached one of their operators to demonstrate the fix to the others. I would collect feedback "
+                    "after the next shift and adjust the guide. If Market district started using the same checklist without being "
+                    "asked, and Harbour reported fewer errors, I would know the approach was spreading. I would also measured how "
+                    "often Harbour still called me; that should drop."),
+    "empathy_0": "I understand, it is normal to worry the first time. Let's look at it together, step by step. The power link is the one with the green tag. Does that make sense so far?",
+    "empathy_1": "Don't worry, you haven't broken anything, nothing is broken. The red warning just means the link is still syncing. Which part did you do last?",
+    "empathy_2": "I'd rather we do it together so you feel confident next time. Try it while I watch, and we'll write short notes in your own words that you can reuse.",
+    "reliability": ("I would tell Clinic district straight away that the outage affects my promise, rather than letting it slip. I "
+                    "logged the commitment in the city tracker, recorded the new risk, and sent an update to Clinic and the outage "
+                    "lead explaining the delay and a new date. I escalated to the resource owner so the backup line stayed on the "
+                    "priority list, followed up every day, and checked back with Clinic after the line was restored to confirm it "
+                    "worked before I closed the item."),
+    "curiosity": ("First I would read the council's change notice and the release notes, then practise the new rules in the training "
+                  "sandbox. I would write down the questions I could not answer and asked the council's routing officer, because my "
+                  "assumption about priority lanes might be wrong. I compared my old plan with the new rules, tested it on one "
+                  "district first, and verified the result with the network team before rolling it out."),
+    "workflow_purpose": "Ticketing lets residents pay for and validate journeys; Transit operations and the finance office rely on it for accurate fares and passenger counts.",
+    "workflow_steps": "Check the outage scope, restore the card readers' network step by step, confirm payment approval with finance, validate test transactions, then reopen the gates.",
+    "workflow_exceptions": "Common exceptions are a rejected payment batch, a reader with the wrong configuration, missing access rights for station staff, or an error in fare tables.",
+    "workflow_stop_refer": "I stop and refer when it is an access problem (access office), a system defect or error (network engineers via the service desk), or a fare policy question (council policy team).",
+    "judgment": ("I would politely decline and explain why I cannot bypass the safety lock: it protects residents and the official too. "
+                 "I would check whether this is an access problem or a defect, escalate to the control owner straight away, and "
+                 "offer the approved route, an emergency restart that keeps the lock in place. I would record the request and "
+                 "protect any personal information in the incident log."),
 }
+WEAK_EMPATHY = dict(ANSWERS,
+                    empathy_0="I understand it is frustrating, but the cables are obvious. Just read the manual first; it is all in there.",
+                    empathy_1="That warning is your fault for skipping a step. Go back and check it again before asking me.",
+                    empathy_2="I cannot do it for you. You should know this by now after the training.")
+UNSAFE = dict(ANSWERS, judgment=("If the official says it is that urgent I would switch off the lock just this once so Grid comes "
+                                 "back online, then tell the team about it later in the week."))
+THIN = dict(ANSWERS, curiosity="", reliability="I always keep my promises.")
 
 
-def cv_bytes(name: str, role: str, platform: str) -> bytes:
+def cv_bytes(name: str, tier: str, platform: str) -> bytes:
+    lines = {
+        "high": [f"Senior Administrative Officer", f"Eight years using the {platform} platform for requisitions and approvals.",
+                 "Trained new staff on the platform and coached colleagues through the last release.",
+                 "Supported colleagues at their desks during go-live; helped colleagues build quick reference guides.",
+                 "Logged tickets with the service desk and followed up until resolved; kept the team tracker up to date.",
+                 "Completed platform training and practised each release in the sandbox."],
+        "moderate": [f"Administrative Coordinator", f"Uses the {platform} system daily for team requests.",
+                     "Helped colleagues with approvals when they were unsure.", "Attended platform training in 2025."],
+        "low": ["Administrative Assistant", "Manages the director's calendar and filing.", "Prepares monthly reports from the finance system."],
+        "none": ["Facilities Technician", "Maintains building equipment and schedules contractors."],
+    }[tier]
     d = docx.Document()
     d.add_heading(name, 0)
-    d.add_paragraph(f"{role}")
-    d.add_paragraph(f"Experience: eight years in government administration, working daily on the {platform} platform and e-procurement.")
-    d.add_paragraph("Supported colleagues during the platform rollout and coached new joiners on approved procedures.")
-    d.add_paragraph("Logged and followed up service desk tickets for access and defect issues; recorded actions in the team tracker.")
-    d.add_paragraph("Completed platform training and practised new releases in the sandbox before go-live.")
-    d.add_paragraph("Date of birth: 01/01/1990")  # removed before assessment (personal characteristic)
+    for l in lines:
+        d.add_paragraph(l)
+    d.add_paragraph("Date of birth: 01/01/1990")  # removed before AI screening
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
 
 
-def backdate(app_id: int, days: int) -> None:
-    ts = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
-    db.ex("UPDATE applications SET status_changed_at=?, created_at=? WHERE id=?", (ts, ts, app_id))
-
-
-async def build_case(ent: dict, name: str, email: str, *, route="self", answers=None, platform="e-procurement",
-                     workflow_name="Purchase requisitions", stop_at="submitted", nominator=None, hours=6.0) -> dict:
-    form = dict(nominee_name=name, nominee_email=email, route=route, department="Corporate Services",
-                business_function="Operations", location="Head office", platform=platform, workflow=workflow_name,
-                reason="Patient and practical; colleagues already ask for help with the platform.",
-                manager_name=f"Manager of {name.split()[0]}", manager_email=f"mgr.{email}")
-    if nominator:
-        form.update(nominator_name=nominator[0], nominator_email=nominator[1], nominator_relationship=nominator[2])
-    a, _ = workflow.create_nomination(ent, form, actor="seed")
-    if stop_at == "consent":
-        return a
-    workflow.record_consent(workflow.get_app(a["id"]), True, email)
-    await workflow.upload_cv(workflow.get_app(a["id"]), f"{name.split()[0]}_CV.docx", cv_bytes(name, "Senior Administrative Officer", platform))
-    workflow.save_application(workflow.get_app(a["id"]), {"answers": answers or {}, "availability": "Tuesday and Thursday afternoons",
-                                                          "proposed_hours": hours})
-    if stop_at == "in_progress":
-        return workflow.get_app(a["id"])
-    workflow.submit_application(workflow.get_app(a["id"]))
-    await workflow.run_assessment(a["id"])
-    return workflow.get_app(a["id"])
+def write_sample_csv() -> Path:
+    path = BASE_DIR / "samples" / "nominations_sample.csv"
+    path.parent.mkdir(exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(HEADER)
+        for n, (name, ent, dept, plat, wf, route, consent, _) in enumerate(PEOPLE, start=1):
+            first = name.split()[0].lower()
+            w.writerow([n, "2026-11-01 09:00", "2026-11-01 09:05", f"nominator{n}@example.gov", f"Nominator {n}", name,
+                        f"{first}.{name.split()[1].lower()}@example.gov", ent, dept, plat, wf, route,
+                        f"{name.split()[0]} is patient and already helps colleagues with {plat}.",
+                        f"Manager of {first.title()}", f"manager.{first}@example.gov", consent])
+    return path
 
 
 async def seed() -> None:
     config.settings.ai_mode = "demo"
-    config.settings.email_mode = "demo"
     for p in (Path(config.settings.db_path), Path(config.settings.db_path + "-wal"), Path(config.settings.db_path + "-shm")):
         p.unlink(missing_ok=True)
     shutil.rmtree(config.settings.upload_dir, ignore_errors=True)
     startup()
-    ents = {}
-    for code, en, ar, target, plats in ENTITIES:
-        eid = db.ex("INSERT INTO entities(code, name_en, name_ar, slug, target, priority_platforms, workflows, user_groups, locations, capacity_needs) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (code, en, ar, f"{code.lower()}-demo", target, plats, "Purchase requisitions, Leave requests",
-                     "Administrative staff, line managers", "Head office, regional offices", "4-8 hours/month per champion"))
-        dom = f"{code.lower()}.example.gov"
-        db.ex("INSERT INTO contacts(entity_id, role, name, email) VALUES (?,?,?,?)", (eid, "focal", f"{code} Focal Point", f"focal@{dom}"))
-        db.ex("INSERT INTO contacts(entity_id, role, name, email) VALUES (?,?,?,?)", (eid, "sponsor", f"{code} Sponsor", f"sponsor@{dom}"))
-        ents[code] = db.q1("SELECT * FROM entities WHERE id=?", (eid,))
 
-    # 1. Complete assessment meeting thresholds -> capacity confirmed -> awaiting sponsor decision.
-    a1 = await build_case(ents["MDS"], "Aisha Rahman", "aisha.rahman@mds.example.gov", answers=STRONG)
-    workflow.candidate_willingness(workflow.get_app(a1["id"]), True, a1["nominee_email"])
-    workflow.manager_commit(workflow.get_app(a1["id"]), {"protected_hours": 6, "workload": "Two routine reports reassigned to a colleague.",
-                            "availability": "Tue/Thu afternoons", "access_confirmed": "1"}, a1["manager_email"])
-    # duplicate nomination of the same person (peer) - recorded, not duplicated
-    workflow.create_nomination(ents["MDS"], dict(nominee_name="Aisha Rahman", nominee_email="aisha.rahman@mds.example.gov", route="peer",
-                               nominator_name="Peer Colleague", nominator_email="peer@mds.example.gov", nominator_relationship="Colleague",
-                               reason="She helps everyone.", platform="HR self-service", workflow="Leave requests"), actor="seed")
+    # Initiative 1: full pipeline
+    iid = workflow.create_initiative("ERP Release 3", "ERP", "Champions for the ERP purchasing and finance release.")
+    path = write_sample_csv()
+    header, rows = imports.read_table(path.name, path.read_bytes())
+    records, _ = imports.apply_mapping(header, rows, imports.guess_mapping(header))
+    workflow.import_records(iid, records)
+    tiers = {p[0]: p[7] for p in PEOPLE}
+    files = []
+    for c in db.q("SELECT id, name FROM candidates WHERE initiative_id=?", (iid,)):
+        if c["name"] == "Samir Odeh":
+            continue  # left without a CV
+        files.append((f"{c['name'].replace(' ', '_')}_CV.docx", cv_bytes(c["name"], tiers[c["name"]], "ERP")))
+    matches = workflow.match_files(iid, [f for f, _ in files])
+    for fn, data in files:
+        workflow.upload_cv(workflow.cand(matches[fn]), fn, data)
+    await workflow.screen_many([r["id"] for r in db.q("SELECT id FROM candidates WHERE initiative_id=? AND status='CV Uploaded'", (iid,))])
 
-    # 2. Missing evidence requiring clarification.
-    thin = dict(STRONG, curiosity="", reliability="I always follow up on issues.")
-    await build_case(ents["DMA"], "Omar Haddad", "omar.haddad@dma.example.gov", answers=thin, platform="case management",
-                     workflow_name="Permit applications")
+    by = {r["name"]: r["id"] for r in db.q("SELECT id, name FROM candidates WHERE initiative_id=?", (iid,))}
+    # Change Lead override: Noor moved up after a strong nomination reason
+    workflow.override_fit(workflow.cand(by["Noor Jaber"]), "Moderate Fit", "Strong peer feedback in the nomination; CV is brief.")
 
-    # 3. High overall score with a failed minimum criterion (empathy).
-    weak_empathy = dict(STRONG,
-                        empathy_0="I understand it is frustrating, but honestly the steps are obvious. Just read the manual first; management requires everyone to use it.",
-                        empathy_1="That error is your fault for skipping a field. Go back and check it again before you ask anyone.",
-                        empathy_2="I cannot do it for you. You should know this by now because the training was last month.")
-    await build_case(ents["HSA"], "Layla Nasser", "layla.nasser@hsa.example.gov", answers=weak_empathy, platform="HR self-service",
-                     workflow_name="Leave requests", route="manager", nominator=("Dr Samir Odeh", "samir.odeh@hsa.example.gov", "Line manager"))
+    plans = {"Aisha Rahman": ANSWERS, "Omar Haddad": ANSWERS, "Layla Nasser": WEAK_EMPATHY, "Yousef Karim": UNSAFE,
+             "Mariam Saleh": ANSWERS, "Khalid Mansour": THIN, "Huda Saeed": ANSWERS}
+    for name, answers in plans.items():
+        c = workflow.cand(by[name])
+        workflow.invite(c)
+        workflow.confirm_consent(workflow.cand(c["id"]))
+        workflow.save_answers(workflow.cand(c["id"]), answers, "text")
+        workflow.submit_answers(workflow.cand(c["id"]))
+        await workflow.run_assessment(c["id"])
+    for name in ("Hassan Ali", "Sara Ibrahim", "Noor Jaber"):
+        workflow.invite(workflow.cand(by[name]))
+    workflow.confirm_consent(workflow.cand(by["Sara Ibrahim"]))
+    workflow.save_answers(workflow.cand(by["Sara Ibrahim"]), {"credibility": ANSWERS["credibility"]}, "text")
 
-    # 4. Remediation and reassessment (unsafe response).
-    unsafe = dict(STRONG, judgment=("If the manager says it is urgent I would help the user finish. I could log in with my credentials "
-                                    "and approve it just this once, then tell the team about it later in the week."))
-    await build_case(ents["EDC"], "Yousef Karim", "yousef.karim@edc.example.gov", answers=unsafe, platform="document management",
-                     workflow_name="Records filing")
+    workflow.decide(workflow.cand(by["Aisha Rahman"]), "approved", "Meets thresholds; strong evidence of building capability in others.")
+    workflow.decide(workflow.cand(by["Omar Haddad"]), "approved", "Meets thresholds; fills the Municipal Affairs coverage gap.")
+    workflow.decide(workflow.cand(by["Layla Nasser"]), "not_approved", "Below the empathy minimum; revisit after coaching.")
+    for step in (1, 2, 3, 4, 5, 6):
+        workflow.set_step(iid, step, True)
 
-    # 5. Awaiting manager commitment (overdue).
-    a5 = await build_case(ents["PFD"], "Mariam Saleh", "mariam.saleh@pfd.example.gov", answers=STRONG, platform="finance",
-                          workflow_name="Expense claims", route="peer", nominator=("Rami Aziz", "rami.aziz@pfd.example.gov", "Team colleague"))
-    workflow.candidate_willingness(workflow.get_app(a5["id"]), True, a5["nominee_email"])
-    backdate(a5["id"], 8)
+    # Initiative 2: just started
+    iid2 = workflow.create_initiative("HR Self-Service Rollout", "HR self-service", "Leave and payroll self-service champions.")
+    workflow.set_step(iid2, 1, True)
+    sub = [r for r in rows if r[7] in ("Ministry of Digital Services", "Education Council")][:3]
+    records2, _ = imports.apply_mapping(header, sub, imports.guess_mapping(header))
+    workflow.import_records(iid2, records2)
+    workflow.set_step(iid2, 2, True)
 
-    # 6. Provisional appointment awaiting day-90 review.
-    a6 = await build_case(ents["TRA"], "Khalid Mansour", "khalid.mansour@tra.example.gov", answers=STRONG, platform="service portal",
-                          workflow_name="Licence renewals")
-    workflow.candidate_willingness(workflow.get_app(a6["id"]), True, a6["nominee_email"])
-    workflow.manager_commit(workflow.get_app(a6["id"]), {"protected_hours": 8, "workload": "Counter rota adjusted on Wednesdays.",
-                            "availability": "Wednesdays", "access_confirmed": "1"}, a6["manager_email"])
-    workflow.sponsor_decide(workflow.get_app(a6["id"]), {"decision": "provisional", "rationale": "Meets thresholds; fills the service portal coverage gap.",
-                            "coverage_need": "service portal", "coi_declared": "none"}, "sponsor@tra.example.gov")
-    workflow.accept_role(workflow.get_app(a6["id"]), True, a6["nominee_email"])
-    start = (date.today() - timedelta(days=80)).isoformat()
-    workflow.update_onboarding(workflow.get_app(a6["id"]), {"buddy": "Hana Yusuf (champion, Licensing)", "objective": "Reduce rejected licence renewals caused by missing documents",
-                               "start_date": start, **{f"check_{i}": "1" for i in range(5)}, "complete": "1"}, config.settings.lead_email)
-    workflow.day90_input(workflow.get_app(a6["id"]), "nominee", {"readiness": "Mostly ready", "contribution": "Coached 14 colleagues; rejected renewals down by a third.",
-                         "workload": "Sustainable", "willing": "Yes"}, a6["nominee_email"])
-
-    # Others: awaiting consent (overdue peer nomination), in progress, withdrawn.
-    a7 = await build_case(ents["DMA"], "Hassan Ali", "hassan.ali@dma.example.gov", route="peer", stop_at="consent",
-                          nominator=("Dana Khoury", "dana.khoury@dma.example.gov", "Colleague"))
-    backdate(a7["id"], 8)
-    await build_case(ents["MDS"], "Sara Ibrahim", "sara.ibrahim@mds.example.gov", stop_at="in_progress",
-                     answers={"credibility": STRONG["credibility"]}, platform="HR self-service", workflow_name="Leave requests")
-    a9 = await build_case(ents["HSA"], "Noor Jaber", "noor.jaber@hsa.example.gov", stop_at="consent")
-    workflow.record_consent(workflow.get_app(a9["id"]), True, a9["nominee_email"])
-    workflow.withdraw(workflow.get_app(a9["id"]), "Moving to a new role", "nominee", a9["nominee_email"])
-
-    for a in db.q("SELECT ref, nominee_name, status, outcome FROM applications ORDER BY id"):
-        print(f"  {a['ref']}  {a['nominee_name']:<16} {a['status']:<30} {a['outcome'] or ''}")
+    for c in db.q("SELECT c.name, c.status, c.fit_final, c.outcome, i.name AS init FROM candidates c JOIN initiatives i ON i.id=c.initiative_id ORDER BY c.id"):
+        print(f"  {c['init'][:14]:<14} {c['name']:<15} {c['status']:<20} {c['fit_final'] or '':<13} {c['outcome'] or ''}")
 
 
 if __name__ == "__main__":
     asyncio.run(seed())
-    print("\nDemo data loaded. Start the server and open /demo")
+    print("\nDemo data loaded. Start the server, open http://localhost:8000 and sign in with the password: demo")

@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Sign in · CDP Champion Selection{% endblock %}{% block content %}
+<div class="card" style="max-width:440px;margin:40px auto"><h1>Sign in</h1>
+<p class="muted">For the CDP Change Lead.</p>
+{% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="/login"><input type="hidden" name="next" value="{{ next }}">
+<label for="pw">Password</label><input id="pw" name="password" type="password" required autocomplete="current-password" autofocus>
+<div class="actions"><button>Sign in</button></div></form>
+{% if demo_password %}<div class="warnbox">Demo mode: no password has been set, so the password is <strong>demo</strong>. Set <code>CDP_LEAD_PASSWORD</code> before real use.</div>{% endif %}
+</div>
+{% endblock %}

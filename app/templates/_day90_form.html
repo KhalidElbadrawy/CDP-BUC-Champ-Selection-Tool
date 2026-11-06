@@ -1,8 +1,0 @@
-<form method="post" action="{{ day90_action or '/me/day90' }}"><input type="hidden" name="csrf" value="{{ csrf }}">
-<label for="rd">Readiness: how confident is the champion supporting colleagues on the workflow?</label>
-<select id="rd" name="readiness" required><option value="">Choose…</option><option>Fully ready</option><option>Mostly ready</option><option>Needs further development</option></select>
-<label for="ct">Contribution: what support has been given, and what difference has it made?</label><textarea id="ct" name="contribution" required></textarea>
-<label for="wl">Workload: are the protected hours working?</label><select id="wl" name="workload" required><option value="">Choose…</option><option>Sustainable</option><option>Sometimes stretched</option><option>Not sustainable</option></select>
-<label for="wi">Continued willingness</label><select id="wi" name="willing" required><option value="">Choose…</option><option>Yes</option><option>Yes, with changes</option><option>No</option></select>
-<label for="cm">Comments</label><textarea id="cm" name="comments" style="min-height:70px"></textarea>
-<div class="actions"><button>Submit day-90 input</button></div></form>

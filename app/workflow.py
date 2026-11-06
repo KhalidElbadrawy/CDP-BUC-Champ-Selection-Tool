@@ -1,642 +1,516 @@
-"""End-to-end nomination, assessment and appointment workflow (server-side rules)."""
+"""Version 2 workflow: initiatives, step tracker, survey import, CV fit screening, assessment links,
+AI assessment, reports and approvals. All business rules are enforced here, on the server."""
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
-from app import ai, config, db, emails, extraction, scoring, security
+from app import ai, config, db, extraction, scoring, security
 
 STATUSES = [
-    "Nominated", "Awaiting Consent", "Application in Progress", "Submitted", "Awaiting Evidence",
-    "Automated Assessment in Progress", "Reassessment Required", "Assessment Complete",
-    "Awaiting Manager Commitment", "Awaiting Sponsor Decision", "Provisionally Appointed", "Onboarding",
-    "Awaiting Day-90 Review", "Confirmed", "Appointment Concluded", "Withdrawn", "Not Selected",
+    "No Consent", "Awaiting CV", "CV Unreadable", "CV Uploaded", "Shortlisted", "Not Shortlisted",
+    "Invited", "In Assessment", "Assessing", "Follow-up Requested", "Assessed",
+    "Approved", "Not Approved", "Withdrawn",
 ]
-TERMINAL = {"Confirmed", "Appointment Concluded", "Withdrawn", "Not Selected"}
-APPOINTED = {"Provisionally Appointed", "Onboarding", "Awaiting Day-90 Review", "Confirmed"}
-ONBOARDING_CHECKLIST = ["Role charter accepted", "Buddy introduced", "Champion induction completed",
-                        "Platform access verified", "Initial workflow objective agreed"]
+INVITABLE = {"Shortlisted", "Invited", "In Assessment", "Follow-up Requested"}
+EDITABLE_ANSWERS = {"Invited", "In Assessment"}
+
+# The step tracker. Steps are an order, not dates; the Change Lead marks each one complete.
+STEPS = [
+    (1, "Collect nominations", "Run the nomination survey in your survey tool (for example Microsoft Forms)."),
+    (2, "Import survey results", "Upload the survey export and check the matched columns."),
+    (3, "Upload CVs", "Bulk upload the nominees' CVs (PDF or DOCX)."),
+    (4, "AI fit rating", "Run the AI CV screening: High, Moderate, Low or Doesn't Fit."),
+    (5, "Review shortlist", "Check the shortlist and override any fit category with a reason."),
+    (6, "Send assessment links", "Copy each personal link or export the mail-merge list and send from your mailbox."),
+    (7, "Assessments completed", "Nominees complete the NEXUS assessment; the AI assesses their evidence."),
+    (8, "Review reports", "Read each candidate's assessment report."),
+    (9, "Approve champions", "Approve or decline each assessed candidate with a short rationale."),
+]
 
 
 class WorkflowError(Exception):
-    """A business rule prevented the action. Message is safe to show to the user."""
+    """A business rule prevented the action. The message is safe to show."""
 
 
-# ------------------------------------------------------------------ helpers
-def get_app(app_id: int) -> dict | None:
-    return db.q1("SELECT a.*, e.name_en AS entity_name, e.name_ar AS entity_name_ar FROM applications a "
-                 "JOIN entities e ON e.id=a.entity_id WHERE a.id=?", (app_id,))
+# ------------------------------------------------------------------ basics
+def cand(cid: int) -> dict | None:
+    return db.q1("SELECT c.*, e.name AS entity_name, i.name AS initiative_name FROM candidates c "
+                 "LEFT JOIN entities e ON e.id=c.entity_id JOIN initiatives i ON i.id=c.initiative_id WHERE c.id=?", (cid,))
 
 
-def set_status(app_id: int, status: str, actor: str = "system", **detail) -> None:
+def set_status(cid: int, status: str, actor: str = "system", **detail) -> None:
     assert status in STATUSES, status
-    db.ex("UPDATE applications SET status=?, status_changed_at=?, updated_at=? WHERE id=?",
-          (status, db.now(), db.now(), app_id))
-    db.audit("status." + status, actor_role=actor, application_id=app_id, **detail)
+    db.ex("UPDATE candidates SET status=?, status_changed_at=?, updated_at=? WHERE id=?", (status, db.now(), db.now(), cid))
+    db.audit("status." + status, actor=actor, candidate_id=cid, **detail)
 
 
-def _due(start_iso: str, days: int) -> str:
-    return (datetime.fromisoformat(start_iso) + timedelta(days=days)).date().isoformat()
+def _active(c: dict) -> None:
+    if c["status"] == "Withdrawn":
+        raise WorkflowError("This candidate has been withdrawn.")
 
 
-def contacts(entity_id: int, role: str) -> list[dict]:
-    return db.q("SELECT * FROM contacts WHERE entity_id=? AND role=? AND active=1", (entity_id, role))
+def new_ref() -> str:
+    return "CH-" + secrets.token_hex(3).upper()
 
 
-def _ensure_active(app: dict) -> None:
-    if app["status"] == "Withdrawn" or app.get("withdrawn_at"):
-        raise WorkflowError("This application has been withdrawn.")
+# ------------------------------------------------------------------ initiatives & steps
+def create_initiative(name: str, platform: str = "", description: str = "") -> int:
+    name = (name or "").strip()
+    if not name:
+        raise WorkflowError("Give the initiative a name, for example 'ERP Release 3'.")
+    iid = db.ex("INSERT INTO initiatives(name, platform, description, created_at) VALUES (?,?,?,?)",
+                (name[:120], (platform or "").strip()[:120], (description or "").strip()[:1000], db.now()))
+    for no, _, _ in STEPS:
+        db.ex("INSERT INTO initiative_steps(initiative_id, step_no) VALUES (?,?)", (iid, no))
+    db.audit("initiative.created", actor="lead", initiative_id=iid, name=name)
+    return iid
 
 
-def _expires(role: str) -> str:
-    days = scoring.current_config()[1]["link_expiry_days"].get(role, 14)
-    return (date.today() + timedelta(days=int(days))).isoformat()
+def set_step(iid: int, step_no: int, complete: bool) -> None:
+    if step_no not in {s[0] for s in STEPS}:
+        raise WorkflowError("Unknown step.")
+    db.ex("UPDATE initiative_steps SET completed_at=? WHERE initiative_id=? AND step_no=?",
+          (db.now() if complete else None, iid, step_no))
+    db.audit("step.completed" if complete else "step.reopened", actor="lead", initiative_id=iid, step=step_no)
 
 
-def _ctx(app: dict, **extra) -> dict:
-    return {"nominee_name": app["nominee_name"], "entity": app.get("entity_name", ""), "ref": app["ref"],
-            "manager_name": app.get("manager_name") or "", **extra}
-
-
-def send_nominee_link(app: dict, template: str, *, is_reminder=False, triggered_by="system", due: str = "") -> dict:
-    raw = security.issue_token("nominee", app["nominee_email"], application_id=app["id"])
-    res = emails.send(template, app["nominee_email"],
-                      _ctx(app, link=security.link_for(raw), expires=_expires("nominee"), due=due),
-                      application=app, is_reminder=is_reminder, triggered_by=triggered_by)
-    _record_delivery(app["id"], res)
-    res["link"] = security.link_for(raw)
-    return res
-
-
-def send_manager_link(app: dict, *, is_reminder=False, triggered_by="system") -> dict:
-    if not app.get("manager_email"):
-        raise WorkflowError("No line-manager email is recorded for this application.")
-    raw = security.issue_token("manager", app["manager_email"], application_id=app["id"])
-    nxt = next_action(app)
-    res = emails.send("manager_request", app["manager_email"],
-                      _ctx(app, link=security.link_for(raw), expires=_expires("manager"), due=nxt["due"] or ""),
-                      application=app, is_reminder=is_reminder, triggered_by=triggered_by)
-    _record_delivery(app["id"], res)
-    res["link"] = security.link_for(raw)
-    return res
-
-
-def send_sponsor_links(entity_id: int, triggered_by="system") -> list[dict]:
-    out = []
-    ent = db.q1("SELECT * FROM entities WHERE id=?", (entity_id,))
-    for s in contacts(entity_id, "sponsor"):
-        raw = security.issue_token("sponsor", s["email"], entity_id=entity_id)
-        res = emails.send("sponsor_request", s["email"],
-                          {"entity": ent["name_en"], "link": security.link_for(raw), "expires": _expires("sponsor")},
-                          entity_id=entity_id, triggered_by=triggered_by)
-        res["link"] = security.link_for(raw)
-        out.append(res)
+def step_progress(iid: int) -> list[dict]:
+    rows = db.q("SELECT status, fit_final, decision, (SELECT COUNT(*) FROM documents d WHERE d.candidate_id=c.id AND d.superseded=0) AS docs "
+                "FROM candidates c WHERE initiative_id=? AND status!='Withdrawn'", (iid,))
+    total = len(rows)
+    consented = [r for r in rows if r["status"] != "No Consent"]
+    with_cv = sum(1 for r in consented if r["docs"])
+    screened = sum(1 for r in consented if r["fit_final"])
+    shortlisted = sum(1 for r in rows if r["fit_final"] in scoring.FIT_PROGRESS)
+    invited = sum(1 for r in rows if r["status"] in ("Invited", "In Assessment", "Assessing", "Follow-up Requested", "Assessed", "Approved", "Not Approved"))
+    assessed = sum(1 for r in rows if r["status"] in ("Assessed", "Approved", "Not Approved"))
+    decided = sum(1 for r in rows if r["decision"])
+    counts = {1: f"{total} nominations imported" if total else "",
+              2: f"{total} nominees" if total else "",
+              3: f"{with_cv} of {len(consented)} CVs uploaded",
+              4: f"{screened} of {len(consented)} screened",
+              5: f"{shortlisted} shortlisted",
+              6: f"{invited} of {shortlisted} invited",
+              7: f"{assessed} of {invited} assessed",
+              8: f"{assessed} reports ready",
+              9: f"{decided} of {assessed} decided"}
+    done = {r["step_no"]: r["completed_at"] for r in db.q("SELECT * FROM initiative_steps WHERE initiative_id=?", (iid,))}
+    out, current_found = [], False
+    for no, title, hint in STEPS:
+        item = {"no": no, "title": title, "hint": hint, "progress": counts[no], "completed_at": done.get(no), "current": False}
+        if not item["completed_at"] and not current_found:
+            item["current"], current_found = True, True
+        out.append(item)
     return out
 
 
-def _record_delivery(app_id: int, res: dict) -> None:
-    if res["status"] == "failed":
-        db.ex("UPDATE applications SET last_error=? WHERE id=?",
-              (f"Email delivery failed ({res['error']}). Progress is saved; resend the link when email is available.", app_id))
-    elif res["status"] in ("sent", "demo-logged"):
-        db.ex("UPDATE applications SET last_error=NULL WHERE id=? AND last_error LIKE 'Email delivery failed%'", (app_id,))
+# ------------------------------------------------------------------ import
+def entity_id(name: str) -> int:
+    clean = re.sub(r"\s+", " ", name).strip()
+    row = db.q1("SELECT id FROM entities WHERE lower(name)=lower(?)", (clean,))
+    return row["id"] if row else db.ex("INSERT INTO entities(name) VALUES (?)", (clean,))
 
 
-# ------------------------------------------------------------------ nomination
-def new_ref() -> str:
-    return "CDP-" + secrets.token_hex(3).upper()
+def import_records(iid: int, records: list[dict]) -> dict:
+    created = duplicates = no_consent = 0
+    notes = []
+    for r in records:
+        eid = entity_id(r["entity"])
+        dup = None
+        if r.get("email"):
+            dup = db.q1("SELECT id FROM candidates WHERE initiative_id=? AND lower(email)=?", (iid, r["email"]))
+        if not dup:
+            dup = db.q1("SELECT id FROM candidates WHERE initiative_id=? AND lower(name)=lower(?) AND entity_id=?", (iid, r["name"], eid))
+        if dup:
+            duplicates += 1
+            notes.append(f"Row {r['row_number']}: {r['name']} is already in this initiative (duplicate nomination recorded).")
+            db.audit("import.duplicate", actor="lead", candidate_id=dup["id"], initiative_id=iid, row=r["row_number"])
+            continue
+        status = "Awaiting CV" if r["consent"] else "No Consent"
+        no_consent += 0 if r["consent"] else 1
+        ts = db.now()
+        cid = db.ex("INSERT INTO candidates(ref, initiative_id, entity_id, name, email, department, platform, workflow, route, "
+                    "nominator_name, nominator_email, reason, manager_name, manager_email, consent_screening, source_row_json, "
+                    "status, status_changed_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (new_ref(), iid, eid, r["name"], r.get("email") or None, r.get("department"), r.get("platform"), r.get("workflow"),
+                     r.get("route"), r.get("nominator_name"), r.get("nominator_email"), r.get("reason"), r.get("manager_name"),
+                     r.get("manager_email"), 1 if r["consent"] else 0, json.dumps(r.get("source_row", {})), status, ts, ts, ts))
+        created += 1
+        db.audit("import.created", actor="lead", candidate_id=cid, initiative_id=iid)
+    if no_consent:
+        notes.append(f"{no_consent} nominee(s) have no recorded consent to AI screening; they will not be screened.")
+    return {"created": created, "duplicates": duplicates, "no_consent": no_consent, "notes": notes}
 
 
-def create_nomination(entity: dict, form: dict, actor: str = "public") -> tuple[dict, bool]:
-    """Returns (application, is_duplicate). Duplicates are recorded as extra nomination events."""
-    email = form["nominee_email"].strip().lower()
-    route = form["route"]
-    if route not in ("self", "peer", "manager"):
-        raise WorkflowError("Choose a nomination route.")
-    rnd = db.q1("SELECT * FROM rounds WHERE status='open' ORDER BY id DESC LIMIT 1")
-    if not rnd:
-        raise WorkflowError("Nominations are not currently open.")
-    existing = db.q1("SELECT id FROM applications WHERE lower(nominee_email)=? AND round_id=? AND status NOT IN ('Withdrawn')",
-                     (email, rnd["id"]))
-    if existing:
-        db.ex("INSERT INTO nomination_events(application_id, route, nominator_name, nominator_email, reason, duplicate, created_at) VALUES (?,?,?,?,?,1,?)",
-              (existing["id"], route, form.get("nominator_name"), form.get("nominator_email"), form.get("reason"), db.now()))
-        db.audit("nomination.duplicate", actor_role=actor, application_id=existing["id"], entity_id=entity["id"], route=route)
-        return get_app(existing["id"]), True
-    ts = db.now()
-    app_id = db.ex(
-        "INSERT INTO applications(ref, round_id, entity_id, nominee_name, nominee_email, department, business_function, location, "
-        "platform, workflow, route, nominator_name, nominator_email, nominator_relationship, reason, manager_name, manager_email, "
-        "status, status_changed_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (new_ref(), rnd["id"], entity["id"], form["nominee_name"].strip(), email, form.get("department"), form.get("business_function"),
-         form.get("location"), form.get("platform"), form.get("workflow"), route,
-         None if route == "self" else form.get("nominator_name"), None if route == "self" else form.get("nominator_email"),
-         None if route == "self" else form.get("nominator_relationship"), form.get("reason"),
-         form.get("manager_name"), (form.get("manager_email") or "").strip().lower() or None, "Nominated", ts, ts, ts))
-    db.ex("INSERT INTO nomination_events(application_id, route, nominator_name, nominator_email, reason, created_at) VALUES (?,?,?,?,?,?)",
-          (app_id, route, form.get("nominator_name"), form.get("nominator_email"), form.get("reason"), ts))
-    db.audit("nomination.created", actor_role=actor, application_id=app_id, entity_id=entity["id"], route=route)
-    app = get_app(app_id)
-    # Every route (incl. self) receives an emailed link: opening it verifies email ownership,
-    # and consent is collected before any CV is requested or assessment begins.
-    res = send_nominee_link(app, "consent_request")
-    if res["status"] in ("sent", "demo-logged"):
-        set_status(app_id, "Awaiting Consent")
-    return get_app(app_id), False
-
-
-def record_consent(app: dict, give: bool, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] not in ("Nominated", "Awaiting Consent"):
+def record_consent(c: dict, actor: str = "lead") -> None:
+    """The Change Lead records consent obtained outside the survey (e.g. by email)."""
+    _active(c)
+    if c["status"] != "No Consent":
         return
-    if give:
-        ver = scoring.current_config()[1]["consent_version"]
-        db.ex("UPDATE applications SET consent_at=?, consent_version=? WHERE id=?", (db.now(), ver, app["id"]))
-        db.audit("consent.given", actor_role="nominee", actor_email=actor_email, application_id=app["id"], version=ver)
-        set_status(app["id"], "Application in Progress", "nominee")
-    else:
-        withdraw(app, "Nominee declined consent", "nominee", actor_email)
+    db.ex("UPDATE candidates SET consent_screening=1 WHERE id=?", (c["id"],))
+    has_cv = db.q1("SELECT 1 FROM documents WHERE candidate_id=? AND superseded=0 AND extract_status='ok'", (c["id"],))
+    set_status(c["id"], "CV Uploaded" if has_cv else "Awaiting CV", actor, reason="consent recorded")
 
 
-# ------------------------------------------------------------------ application
-def save_application(app: dict, data: dict) -> None:
-    _ensure_active(app)
-    if app["status"] not in ("Application in Progress",):
-        raise WorkflowError("The application can no longer be edited at this stage.")
-    answers = json.loads(app["answers_json"] or "{}")
-    answers.update(data.get("answers", {}))
-    extracted = json.loads(app["extracted_json"] or "{}")
-    if "extracted" in data:
-        extracted.update(data["extracted"])
-        extracted["corrected_by_nominee"] = True
-    db.ex("UPDATE applications SET answers_json=?, extracted_json=?, availability=?, proposed_hours=?, updated_at=? WHERE id=?",
-          (json.dumps(answers), json.dumps(extracted), data.get("availability", app["availability"]),
-           data.get("proposed_hours", app["proposed_hours"]), db.now(), app["id"]))
-    db.audit("application.saved", actor_role="nominee", application_id=app["id"])
+# ------------------------------------------------------------------ CVs
+def _tokens(text: str) -> set[str]:
+    return {t for t in re.split(r"[^a-z؀-ۿ]+", text.lower()) if len(t) >= 2}
 
 
-async def upload_cv(app: dict, filename: str, data: bytes) -> dict:
-    _ensure_active(app)
-    if not app["consent_at"]:
-        raise WorkflowError("Consent is required before a CV can be uploaded.")
-    if app["status"] not in ("Application in Progress", "Awaiting Evidence"):
-        raise WorkflowError("A CV cannot be uploaded at this stage.")
+def match_files(iid: int, filenames: list[str]) -> dict[str, int | None]:
+    """Match each file to exactly one nominee whose every name part appears in the filename."""
+    people = db.q("SELECT id, name FROM candidates WHERE initiative_id=? AND status!='Withdrawn'", (iid,))
+    out = {}
+    for fn in filenames:
+        ft = _tokens(Path(fn).stem)
+        hits = [p["id"] for p in people if _tokens(p["name"]) and _tokens(p["name"]) <= ft]
+        out[fn] = hits[0] if len(hits) == 1 else None
+    return out
+
+
+def upload_cv(c: dict, filename: str, data: bytes) -> dict:
+    _active(c)
     res = extraction.extract(filename, data)
     stored = None
     if res.status in ("ok", "unreadable"):
-        folder = Path(config.settings.upload_dir) / str(app["id"])
+        folder = Path(config.settings.upload_dir) / str(c["id"])
         folder.mkdir(parents=True, exist_ok=True)
         stored = str(folder / f"{secrets.token_hex(8)}{Path(filename).suffix.lower()}")
         Path(stored).write_bytes(data)
-    db.ex("UPDATE documents SET superseded=1 WHERE application_id=?", (app["id"],))
-    doc_id = db.ex("INSERT INTO documents(application_id, filename, stored_path, mime, size, sha256, extract_status, extract_error, extracted_text, uploaded_at) "
-                   "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                   (app["id"], Path(filename).name[:200], stored, extraction.ALLOWED.get(Path(filename).suffix.lower()),
-                    len(data), extraction.sha256(data), res.status, res.error, res.text, db.now()))
-    db.audit("cv.uploaded", actor_role="nominee", application_id=app["id"], document_id=doc_id, status=res.status)
-    out = {"document_id": doc_id, "status": res.status, "error": res.error}
-    if res.status == "ok":
-        try:
-            mode, screen = await ai.cv_screen(extraction.redact(res.text, [app["nominee_name"]]),
-                                              app["platform"] or "", app["workflow"] or "")
-            db.ex("INSERT INTO cv_screenings(application_id, document_id, mode, result_json, created_at) VALUES (?,?,?,?,?)",
-                  (app["id"], doc_id, mode, json.dumps(screen), db.now()))
-            fresh = get_app(app["id"])
-            extracted = json.loads(fresh["extracted_json"] or "{}")
-            for k, v in screen.get("extracted", {}).items():
-                extracted[k] = ", ".join(v) if isinstance(v, list) and k != "examples" else ("\n".join(v) if isinstance(v, list) else v)
-            extracted["corrected_by_nominee"] = False
-            db.ex("UPDATE applications SET extracted_json=? WHERE id=?", (json.dumps(extracted), app["id"]))
-            db.audit("cv.screened", application_id=app["id"], mode=mode)
-            out["screen"] = screen
-        except ai.AIError as e:
-            out["error"] = f"CV uploaded. Automated CV screening is temporarily unavailable ({e}); you can enter details manually."
-            db.audit("cv.screen_failed", application_id=app["id"], error=str(e))
-    return out
+    db.ex("UPDATE documents SET superseded=1 WHERE candidate_id=?", (c["id"],))
+    did = db.ex("INSERT INTO documents(candidate_id, filename, stored_path, mime, size, sha256, extract_status, extract_error, extracted_text, uploaded_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (c["id"], Path(filename).name[:200], stored, extraction.ALLOWED.get(Path(filename).suffix.lower()), len(data),
+                 extraction.sha256(data), res.status, res.error, res.text, db.now()))
+    db.audit("cv.uploaded", actor="lead", candidate_id=c["id"], status=res.status)
+    if c["status"] in ("Awaiting CV", "CV Unreadable", "CV Uploaded"):
+        set_status(c["id"], "CV Uploaded" if res.status == "ok" else "CV Unreadable", "lead")
+    return {"document_id": did, "status": res.status, "error": res.error}
 
 
-def latest_screen(app_id: int) -> dict | None:
-    row = db.q1("SELECT * FROM cv_screenings WHERE application_id=? ORDER BY id DESC LIMIT 1", (app_id,))
+def latest_document(cid: int) -> dict | None:
+    return db.q1("SELECT id, filename, extract_status, extract_error, uploaded_at, size FROM documents "
+                 "WHERE candidate_id=? AND superseded=0 ORDER BY id DESC LIMIT 1", (cid,))
+
+
+# ------------------------------------------------------------------ CV fit screening
+async def screen(cid: int) -> dict | None:
+    c = cand(cid)
+    if not c or c["status"] == "Withdrawn" or not c["consent_screening"]:
+        return None
+    doc = db.q1("SELECT * FROM documents WHERE candidate_id=? AND superseded=0 AND extract_status='ok' ORDER BY id DESC LIMIT 1", (cid,))
+    if not doc:
+        return None
+    try:
+        mode, result = await ai.cv_screen(extraction.redact(doc["extracted_text"], [c["name"]]), c["platform"] or "", c["workflow"] or "")
+    except Exception as e:
+        db.ex("UPDATE candidates SET last_error=? WHERE id=?", (f"AI screening could not run ({e}). The CV is saved; try again.", cid))
+        db.audit("screen.failed", candidate_id=cid, error=str(e))
+        return None
+    db.ex("INSERT INTO cv_screenings(candidate_id, document_id, mode, result_json, created_at) VALUES (?,?,?,?,?)",
+          (cid, doc["id"], mode, json.dumps(result), db.now()))
+    cat = result["fit_category"]
+    db.ex("UPDATE candidates SET fit_ai=?, fit_final=?, fit_override_reason=NULL, last_error=NULL WHERE id=?", (cat, cat, cid))
+    db.audit("screen.complete", candidate_id=cid, fit=cat, mode=mode)
+    if c["status"] in ("CV Uploaded", "Shortlisted", "Not Shortlisted"):
+        set_status(cid, "Shortlisted" if cat in scoring.FIT_PROGRESS else "Not Shortlisted")
+    return result
+
+
+async def screen_many(cids: list[int]) -> int:
+    results = await asyncio.gather(*(screen(i) for i in cids))
+    return sum(1 for r in results if r)
+
+
+def latest_screen(cid: int) -> dict | None:
+    row = db.q1("SELECT * FROM cv_screenings WHERE candidate_id=? ORDER BY id DESC LIMIT 1", (cid,))
     if row:
         row["result"] = json.loads(row["result_json"])
     return row
 
 
-def latest_document(app_id: int) -> dict | None:
-    return db.q1("SELECT id, filename, extract_status, extract_error, uploaded_at, size FROM documents WHERE application_id=? AND superseded=0 ORDER BY id DESC LIMIT 1", (app_id,))
+def override_fit(c: dict, category: str, reason: str) -> None:
+    _active(c)
+    if category not in scoring.FIT_CATEGORIES:
+        raise WorkflowError("Choose a fit category.")
+    if not (reason or "").strip():
+        raise WorkflowError("Record a reason for changing the AI's fit category.")
+    if not c["fit_ai"]:
+        raise WorkflowError("Run the AI fit rating first.")
+    if c["status"] not in ("Shortlisted", "Not Shortlisted"):
+        raise WorkflowError("The fit category can only be changed before an assessment link is sent.")
+    db.ex("UPDATE candidates SET fit_final=?, fit_override_reason=? WHERE id=?", (category, reason.strip(), c["id"]))
+    db.audit("fit.override", actor="lead", candidate_id=c["id"], ai=c["fit_ai"], final=category, reason=reason.strip())
+    set_status(c["id"], "Shortlisted" if category in scoring.FIT_PROGRESS else "Not Shortlisted", "lead")
 
 
-def build_snapshot(app: dict) -> dict:
-    """Evidence given to BOTH assessors: identical, redacted, source-tagged, no personal characteristics."""
-    names = [app["nominee_name"]]
-    answers = json.loads(app["answers_json"] or "{}")
-    extracted = json.loads(app["extracted_json"] or "{}")
+# ------------------------------------------------------------------ assessment links
+def invite(c: dict) -> str:
+    _active(c)
+    if c["status"] not in INVITABLE:
+        raise WorkflowError("Only shortlisted candidates can be sent an assessment link.")
+    raw = security.issue_link(c["id"])
+    if c["status"] == "Shortlisted":
+        set_status(c["id"], "Invited", "lead")
+    db.audit("link.issued", actor="lead", candidate_id=c["id"])
+    return security.link_for(raw)
+
+
+def confirm_consent(c: dict) -> None:
+    _active(c)
+    if c["status"] not in ("Invited", "In Assessment"):
+        return
+    ver = scoring.current_config()[1]["consent_version"]
+    db.ex("UPDATE candidates SET consent_assessment_at=? WHERE id=?", (db.now(), c["id"]))
+    db.audit("consent.assessment", actor="candidate", candidate_id=c["id"], version=ver)
+    if c["status"] == "Invited":
+        set_status(c["id"], "In Assessment", "candidate")
+
+
+def save_answers(c: dict, answers: dict, mode: str, actor: str = "candidate") -> None:
+    _active(c)
+    if actor == "candidate" and c["status"] not in EDITABLE_ANSWERS:
+        raise WorkflowError("Your answers can no longer be changed.")
+    if actor == "lead" and c["status"] not in INVITABLE:
+        raise WorkflowError("Offline answers can only be added for shortlisted candidates who have not finished.")
+    current = json.loads(c["answers_json"] or "{}")
+    current.update({k: str(v)[:6000] for k, v in answers.items()})
+    db.ex("UPDATE candidates SET answers_json=?, assessment_mode=?, updated_at=? WHERE id=?",
+          (json.dumps(current), mode, db.now(), c["id"]))
+
+
+def submit_answers(c: dict, actor: str = "candidate") -> None:
+    _active(c)
+    if actor == "candidate" and not c["consent_assessment_at"]:
+        raise WorkflowError("Please confirm your consent first.")
+    if c["status"] not in EDITABLE_ANSWERS and not (actor == "lead" and c["status"] in INVITABLE):
+        raise WorkflowError("These answers have already been submitted.")
+    set_status(c["id"], "Assessing", actor)
+    snapshot_evidence(c["id"])
+
+
+def build_snapshot(c: dict) -> dict:
+    """Evidence for both assessors: identical, redacted, source-tagged."""
+    names = [c["name"]]
+    answers = json.loads(c["answers_json"] or "{}")
+    origin = "offline document entered by the Change Lead" if c["assessment_mode"] == "offline" else "NEXUS text scenarios"
     sources = []
-    doc = db.q1("SELECT extracted_text FROM documents WHERE application_id=? AND superseded=0 AND extract_status='ok' ORDER BY id DESC LIMIT 1", (app["id"],))
-    if doc:
-        sources.append({"id": "CV", "label": "Uploaded CV (claims are unverified)", "criterion": None,
-                        "text": extraction.redact(doc["extracted_text"], names)[:15000]})
-    if extracted:
-        summary = "; ".join(f"{k}: {v}" for k, v in extracted.items() if k != "corrected_by_nominee" and v)
-        if summary:
-            sources.append({"id": "CV-SUMMARY", "label": "CV summary confirmed or corrected by candidate", "criterion": None,
-                            "text": extraction.redact(summary, names)})
-    for c in scoring.CRITERIA:
-        k = c["key"]
-        if c["task"] == "simulation":
-            turns = [f"User: {u}\nCandidate: {answers.get(f'empathy_{i}', '').strip()}"
-                     for i, u in enumerate(scoring.EMPATHY_SIMULATION)]
+    for cr in scoring.CRITERIA:
+        k = cr["key"]
+        if cr["task"] == "simulation":
+            turns = [f"User: {u}\nCandidate: {answers.get(f'empathy_{i}', '').strip()}" for i, u in enumerate(scoring.EMPATHY_SIMULATION)]
             text = "\n".join(turns) if any(answers.get(f"empathy_{i}") for i in range(3)) else ""
-            label = "Simulated coaching exchange (performance within a digital exercise)"
-        elif c["task"] == "walkthrough":
+            label = f"Coaching exchange with Kai, the AI teammate ({origin}; performance within a digital exercise)"
+        elif cr["task"] == "walkthrough":
             parts = [f"Prompt: {q}\nCandidate: {answers.get('workflow_' + f, '').strip()}" for f, q in scoring.WORKFLOW_FIELDS]
             text = "\n".join(parts) if any(answers.get("workflow_" + f) for f, _ in scoring.WORKFLOW_FIELDS) else ""
-            label = "Structured workflow walkthrough (performance within a digital exercise)"
+            label = f"Transit ticketing walkthrough ({origin}; performance within a digital exercise)"
         else:
             text = answers.get(k, "").strip()
-            label = f"Answer to: {c['question']}"
+            label = f"Response to: {cr['question']} ({origin})"
         sources.append({"id": f"Q-{k}", "label": label, "criterion": k, "text": extraction.redact(text, names) if text else ""})
-        fup = answers.get(f"followup_{k}", "").strip()
-        if fup:
-            sources.append({"id": f"FU-{k}", "label": "Answer to CV follow-up question", "criterion": k,
-                            "text": extraction.redact(fup, names)})
-    for cl in db.q("SELECT * FROM clarifications WHERE application_id=? AND response IS NOT NULL ORDER BY id", (app["id"],)):
+    for cl in db.q("SELECT * FROM clarifications WHERE candidate_id=? AND response IS NOT NULL ORDER BY id", (c["id"],)):
+        prefix = "Remediation response" if cl["kind"] == "remediation" else "Clarification response"
         sources.append({"id": f"CL{cl['round_no']}-{cl['criterion']}", "criterion": cl["criterion"],
-                        "label": f"{cl['kind'].title()} response (round {cl['round_no']}) to: {cl['question'][:160]}",
+                        "label": f"{prefix} (round {cl['round_no']}) to: {cl['question'][:160]}",
                         "text": extraction.redact(cl["response"], names)})
-    return {"platform": app["platform"], "workflow": app["workflow"], "sources": sources}
+    return {"platform": c["platform"], "workflow": c["workflow"], "sources": sources}
 
 
-def submit_application(app: dict) -> None:
-    _ensure_active(app)
-    if not app["consent_at"]:
-        raise WorkflowError("Consent is required before submission.")
-    if app["status"] != "Application in Progress":
-        raise WorkflowError("This application has already been submitted.")
-    if not latest_document(app["id"]):
-        raise WorkflowError("Please upload your CV (PDF or DOCX) before submitting.")
-    if not app["availability"] or not app["proposed_hours"]:
-        raise WorkflowError("Please state your availability and proposed protected hours.")
-    db.ex("UPDATE applications SET submitted_at=? WHERE id=?", (db.now(), app["id"]))
-    set_status(app["id"], "Submitted", "nominee")
-    snapshot_evidence(app["id"])
-    send_nominee_link(get_app(app["id"]), "acknowledgment")
+def snapshot_evidence(cid: int) -> int:
+    c = cand(cid)
+    v = c["evidence_version"] + 1
+    db.ex("INSERT INTO evidence_versions(candidate_id, version, snapshot_json, created_at) VALUES (?,?,?,?)",
+          (cid, v, json.dumps(build_snapshot(c)), db.now()))
+    db.ex("UPDATE candidates SET evidence_version=? WHERE id=?", (v, cid))
+    return v
 
 
-def snapshot_evidence(app_id: int) -> int:
-    app = get_app(app_id)
-    version = app["evidence_version"] + 1
-    db.ex("INSERT INTO evidence_versions(application_id, version, snapshot_json, created_at) VALUES (?,?,?,?)",
-          (app_id, version, json.dumps(build_snapshot(app)), db.now()))
-    db.ex("UPDATE applications SET evidence_version=? WHERE id=?", (version, app_id))
-    db.audit("evidence.versioned", application_id=app_id, version=version)
-    return version
-
-
-# ------------------------------------------------------------------ automated assessment
-async def run_assessment(app_id: int) -> dict | None:
-    app = get_app(app_id)
-    if not app or app["withdrawn_at"] or app["status"] not in ("Submitted", "Automated Assessment in Progress"):
+async def run_assessment(cid: int) -> dict | None:
+    c = cand(cid)
+    if not c or c["status"] != "Assessing":
         return None
-    ev = db.q1("SELECT * FROM evidence_versions WHERE application_id=? ORDER BY version DESC LIMIT 1", (app_id,))
+    ev = db.q1("SELECT * FROM evidence_versions WHERE candidate_id=? ORDER BY version DESC LIMIT 1", (cid,))
     snapshot = json.loads(ev["snapshot_json"])
     cfg_version, cfg = scoring.current_config()
-    set_status(app_id, "Automated Assessment in Progress")
-    asmt_id = db.ex("INSERT INTO assessments(application_id, evidence_version, config_version, round_no, mode, status, created_at) VALUES (?,?,?,?,?,?,?)",
-                    (app_id, ev["version"], cfg_version, app["clarification_rounds"], ai.mode(), "running", db.now()))
+    aid = db.ex("INSERT INTO assessments(candidate_id, evidence_version, config_version, round_no, mode, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                (cid, ev["version"], cfg_version, c["clarification_rounds"], ai.mode(), "running", db.now()))
     try:
-        # Two blinded passes: separate sessions, same snapshot, neither receives the other's output.
         pass_a, pass_b = await asyncio.gather(ai.assessment_pass(snapshot, "A"), ai.assessment_pass(snapshot, "B"))
-        db.ex("UPDATE assessments SET pass_a_json=?, pass_b_json=? WHERE id=?", (json.dumps(pass_a), json.dumps(pass_b), asmt_id))
-        db.audit("assessment.passes_complete", application_id=app_id, assessment_id=asmt_id)
-        if get_app(app_id)["withdrawn_at"]:
-            db.ex("UPDATE assessments SET status='stopped', completed_at=? WHERE id=?", (db.now(), asmt_id))
-            return None
+        db.ex("UPDATE assessments SET pass_a_json=?, pass_b_json=? WHERE id=?", (json.dumps(pass_a), json.dumps(pass_b), aid))
         moderation = await ai.moderate(snapshot, pass_a, pass_b)
-    except Exception as e:  # AIError or malformed output: never leave an assessment stuck 'running'
-        db.ex("UPDATE assessments SET status='failed', error=?, completed_at=? WHERE id=?", (str(e), db.now(), asmt_id))
-        db.ex("UPDATE applications SET last_error=? WHERE id=?",
-              (f"Automated assessment could not run ({e}). Your submission is saved and will be retried.", app_id))
-        set_status(app_id, "Submitted", detail="assessment failed")
-        db.audit("assessment.failed", application_id=app_id, assessment_id=asmt_id, error=str(e))
+    except Exception as e:
+        db.ex("UPDATE assessments SET status='failed', error=?, completed_at=? WHERE id=?", (str(e), db.now(), aid))
+        db.ex("UPDATE candidates SET last_error=? WHERE id=?", (f"AI assessment could not run ({e}). Answers are saved and will be retried.", cid))
+        db.audit("assessment.failed", candidate_id=cid, error=str(e))
         return None
-
+    if cand(cid)["status"] != "Assessing":  # withdrawn meanwhile
+        db.ex("UPDATE assessments SET status='stopped', completed_at=? WHERE id=?", (db.now(), aid))
+        return None
     final = {k: {"rating": m["final_rating"], "rating_basis": m["rating_basis"], "unsafe_serious": m["unsafe_serious"]}
              for k, m in moderation["criteria"].items()}
     result = scoring.score(final, cfg)
     for k, m in moderation["criteria"].items():
         if m["differed"]:
-            db.audit("moderation.difference", application_id=app_id, assessment_id=asmt_id, criterion=k,
-                     pass_a=m["pass_a"], pass_b=m["pass_b"], final=m["final_rating"], resolution=m["resolution"],
-                     justification=m["justification"])
-
-    app = get_app(app_id)
-    if app["withdrawn_at"]:
-        db.ex("UPDATE assessments SET status='stopped', completed_at=? WHERE id=?", (db.now(), asmt_id))
-        return None
-    max_rounds = int(cfg["max_clarification_rounds"])
+            db.audit("moderation.difference", candidate_id=cid, criterion=k, pass_a=m["pass_a"], pass_b=m["pass_b"],
+                     final=m["final_rating"], resolution=m["resolution"], justification=m["justification"])
     needs = [(k, m) for k, m in moderation["criteria"].items() if m["resolution"] in ("clarification", "remediation")]
-    rounds_left = app["clarification_rounds"] < max_rounds
+    rounds_left = c["clarification_rounds"] < int(cfg["max_clarification_rounds"])
     outcome = result["outcome"]
     if needs and not rounds_left and outcome != scoring.OUTCOME_REMEDIATION:
         outcome = scoring.OUTCOME_INCOMPLETE
     result["final_outcome"] = outcome
-    result["summary"] = assessment_summary(result, moderation)
+    result["recommendation"] = recommendation(outcome)
     db.ex("UPDATE assessments SET moderation_json=?, result_json=?, status='complete', completed_at=? WHERE id=?",
-          (json.dumps(moderation), json.dumps(result), db.now(), asmt_id))
-    db.ex("UPDATE applications SET outcome=?, last_error=NULL WHERE id=?", (outcome, app_id))
-    db.audit("assessment.complete", application_id=app_id, assessment_id=asmt_id, outcome=outcome,
-             score=result["score_text"], config_version=cfg_version, evidence_version=ev["version"], mode=ai.mode())
-
-    if needs and rounds_left:
-        round_no = app["clarification_rounds"] + 1
-        remediation = any(m["resolution"] == "remediation" for _, m in needs)
+          (json.dumps(moderation), json.dumps(result), db.now(), aid))
+    db.ex("UPDATE candidates SET outcome=?, last_error=NULL WHERE id=?", (outcome, cid))
+    db.audit("assessment.complete", candidate_id=cid, outcome=outcome, score=result["score_text"], mode=ai.mode(),
+             config_version=cfg_version, evidence_version=ev["version"])
+    if needs and rounds_left and c["assessment_mode"] != "offline":
+        rn = c["clarification_rounds"] + 1
         for k, m in needs:
             kind = "remediation" if m["resolution"] == "remediation" else "clarification"
-            question = (m["remediation_exercise"] or ai.REMEDIATION_EXERCISE) if kind == "remediation" else (m["clarification_question"] or ai.CLARIFY_BANK[k])
-            db.ex("INSERT INTO clarifications(application_id, assessment_id, round_no, criterion, kind, question, created_at) VALUES (?,?,?,?,?,?,?)",
-                  (app_id, asmt_id, round_no, k, kind, question, db.now()))
-        status = "Reassessment Required" if remediation else "Awaiting Evidence"
-        set_status(app_id, status)
-        app = get_app(app_id)
-        send_nominee_link(app, "reassessment" if remediation else "clarification", due=next_action(app)["due"] or "")
-    elif outcome == scoring.OUTCOME_MEETS:
-        set_status(app_id, "Assessment Complete")
-        set_status(app_id, "Awaiting Manager Commitment")
-        app = get_app(app_id)
-        send_nominee_link(app, "outcome_meets")
-        try:
-            send_manager_link(app)
-        except WorkflowError as e:
-            db.ex("UPDATE applications SET last_error=? WHERE id=?", (str(e), app_id))
+            q = (m["remediation_exercise"] or ai.REMEDIATION_EXERCISE) if kind == "remediation" else (m["clarification_question"] or ai.CLARIFY_BANK[k])
+            db.ex("INSERT INTO clarifications(candidate_id, assessment_id, round_no, criterion, kind, question, created_at) VALUES (?,?,?,?,?,?,?)",
+                  (cid, aid, rn, k, kind, q, db.now()))
+        set_status(cid, "Follow-up Requested")
     else:
-        set_status(app_id, "Assessment Complete")
+        set_status(cid, "Assessed")
     return result
 
 
-def assessment_summary(result: dict, moderation: dict) -> str:
-    agreed = sum(1 for m in moderation["criteria"].values() if m["resolution"] == "agreed")
-    reeval = sum(1 for m in moderation["criteria"].values() if m["resolution"] == "re-evaluated")
-    parts = [f"AI-generated assessment. Score: {result['score_text']}", f"Outcome: {result['outcome']}.",
-             f"Evidence coverage: {result['evidence_coverage']}.",
-             f"Moderation: {agreed} criteria agreed between passes, {reeval} re-evaluated."]
-    if result["minimum_failures"]:
-        names = [c["name"] for c in scoring.CRITERIA if c["key"] in result["minimum_failures"]]
-        parts.append("Below minimum rating: " + "; ".join(names) + ".")
-    if result["unsafe_serious"]:
-        parts.append("A potentially unsafe response requires remediation and reassessment.")
-    parts.append("Agreement between passes indicates scoring consistency; it does not verify CV claims.")
-    return " ".join(parts)
+def recommendation(outcome: str) -> str:
+    return {
+        scoring.OUTCOME_MEETS: "Recommended for approval",
+        scoring.OUTCOME_NOT_YET: "Not recommended at this stage",
+        scoring.OUTCOME_REMEDIATION: "Not recommended until the safety concern is resolved",
+        scoring.OUTCOME_INCOMPLETE: "Evidence incomplete: decide with caution",
+        scoring.OUTCOME_EVIDENCE: "Evidence incomplete: decide with caution",
+    }.get(outcome, "")
 
 
-def latest_assessment(app_id: int) -> dict | None:
-    row = db.q1("SELECT * FROM assessments WHERE application_id=? ORDER BY id DESC LIMIT 1", (app_id,))
+def open_clarifications(cid: int) -> list[dict]:
+    return db.q("SELECT * FROM clarifications WHERE candidate_id=? AND response IS NULL ORDER BY id", (cid,))
+
+
+def respond_clarifications(c: dict, responses: dict[int, str]) -> None:
+    _active(c)
+    if c["status"] != "Follow-up Requested":
+        raise WorkflowError("There are no follow-up questions to answer.")
+    pending = open_clarifications(c["id"])
+    if any(not (responses.get(cl["id"]) or "").strip() for cl in pending):
+        raise WorkflowError("Please answer every follow-up question.")
+    for cl in pending:
+        db.ex("UPDATE clarifications SET response=?, responded_at=? WHERE id=?", (responses[cl["id"]].strip()[:6000], db.now(), cl["id"]))
+    db.ex("UPDATE candidates SET clarification_rounds=clarification_rounds+1 WHERE id=?", (c["id"],))
+    set_status(c["id"], "Assessing", "candidate")
+    snapshot_evidence(c["id"])
+
+
+def latest_assessment(cid: int) -> dict | None:
+    row = db.q1("SELECT * FROM assessments WHERE candidate_id=? ORDER BY id DESC LIMIT 1", (cid,))
     if row:
         for k in ("pass_a_json", "pass_b_json", "moderation_json", "result_json"):
             row[k[:-5]] = json.loads(row[k]) if row[k] else None
     return row
 
 
-def open_clarifications(app_id: int) -> list[dict]:
-    return db.q("SELECT * FROM clarifications WHERE application_id=? AND response IS NULL ORDER BY id", (app_id,))
+# ------------------------------------------------------------------ decisions
+def decide(c: dict, decision: str, rationale: str) -> None:
+    _active(c)
+    if c["status"] not in ("Assessed", "Approved", "Not Approved"):
+        raise WorkflowError("A candidate can be approved only after their assessment is complete.")
+    if decision not in ("approved", "not_approved"):
+        raise WorkflowError("Choose Approve or Not approve.")
+    if not (rationale or "").strip():
+        raise WorkflowError("Record a short rationale for the decision.")
+    db.ex("UPDATE candidates SET decision=?, decision_rationale=?, decided_at=? WHERE id=?",
+          (decision, rationale.strip()[:2000], db.now(), c["id"]))
+    db.audit("decision." + decision, actor="lead", candidate_id=c["id"], rationale=rationale.strip())
+    set_status(c["id"], "Approved" if decision == "approved" else "Not Approved", "lead")
 
 
-def respond_clarifications(app: dict, responses: dict[int, str]) -> None:
-    _ensure_active(app)
-    if app["status"] not in ("Awaiting Evidence", "Reassessment Required"):
-        raise WorkflowError("There are no outstanding requests to answer.")
-    pending = open_clarifications(app["id"])
-    for cl in pending:
-        text = (responses.get(cl["id"]) or "").strip()
-        if not text:
-            raise WorkflowError("Please answer every outstanding question before resubmitting.")
-    for cl in pending:
-        db.ex("UPDATE clarifications SET response=?, responded_at=? WHERE id=?", (responses[cl["id"]].strip(), db.now(), cl["id"]))
-    db.ex("UPDATE applications SET clarification_rounds=clarification_rounds+1 WHERE id=?", (app["id"],))
-    db.audit("clarification.responded", actor_role="nominee", application_id=app["id"], count=len(pending))
-    set_status(app["id"], "Submitted", "nominee")
-    snapshot_evidence(app["id"])
-
-
-# ------------------------------------------------------------------ capacity & appointment
-def manager_commit(app: dict, form: dict, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Awaiting Manager Commitment":
-        raise WorkflowError("A manager commitment is not currently required for this application.")
-    hours = float(form.get("protected_hours") or 0)
-    if hours <= 0:
-        raise WorkflowError("Please confirm the number of protected hours.")
-    db.ex("INSERT OR REPLACE INTO manager_commitments(application_id, manager_email, protected_hours, workload, availability, access_confirmed, access_actions, supports, submitted_at) "
-          "VALUES (?,?,?,?,?,?,?,?,?)",
-          (app["id"], actor_email, hours, form.get("workload"), form.get("availability"),
-           1 if form.get("access_confirmed") else 0, form.get("access_actions"), 1 if form.get("supports", True) else 0, db.now()))
-    db.audit("manager.committed", actor_role="manager", actor_email=actor_email, application_id=app["id"],
-             hours=hours, access_confirmed=bool(form.get("access_confirmed")))
-    maybe_advance_to_sponsor(get_app(app["id"]))
-
-
-def candidate_willingness(app: dict, willing: bool, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Awaiting Manager Commitment":
-        raise WorkflowError("Not required at this stage.")
-    db.ex("UPDATE applications SET candidate_willing=? WHERE id=?", (1 if willing else 0, app["id"]))
-    db.audit("candidate.willingness", actor_role="nominee", actor_email=actor_email, application_id=app["id"], willing=willing)
-    if not willing:
-        withdraw(app, "Candidate no longer willing to take part", "nominee", actor_email)
+def withdraw(c: dict, reason: str) -> None:
+    if c["status"] == "Withdrawn":
         return
-    maybe_advance_to_sponsor(get_app(app["id"]))
+    security.revoke_links(c["id"])
+    db.audit("withdrawn", actor="lead", candidate_id=c["id"], reason=reason)
+    set_status(c["id"], "Withdrawn", "lead")
 
 
-def maybe_advance_to_sponsor(app: dict) -> bool:
-    mc = db.q1("SELECT * FROM manager_commitments WHERE application_id=?", (app["id"],))
-    if mc and mc["supports"] and mc["access_confirmed"] and app["candidate_willing"] == 1:
-        set_status(app["id"], "Awaiting Sponsor Decision")
-        send_sponsor_links(app["entity_id"])
-        return True
-    return False
+def set_extra_time(c: dict, factor: float) -> None:
+    if not 1.0 <= factor <= 3.0:
+        raise WorkflowError("Extra time must be between 1x and 3x.")
+    db.ex("UPDATE candidates SET extra_time=? WHERE id=?", (factor, c["id"]))
+    db.audit("adjustment.extra_time", actor="lead", candidate_id=c["id"], factor=factor)
 
 
-def appointment_requirements(app: dict) -> list[dict]:
-    mc = db.q1("SELECT * FROM manager_commitments WHERE application_id=?", (app["id"],))
-    sd = db.q1("SELECT * FROM sponsor_decisions WHERE application_id=? AND decision='provisional' ORDER BY id DESC LIMIT 1", (app["id"],))
-    return [
-        {"key": "consent", "label": "Nominee consent recorded", "met": bool(app["consent_at"])},
-        {"key": "assessment", "label": "Assessment meets proposed thresholds", "met": app["outcome"] == scoring.OUTCOME_MEETS},
-        {"key": "capacity", "label": "Line-manager capacity commitment", "met": bool(mc and mc["supports"] and mc["protected_hours"])},
-        {"key": "access", "label": "Required platform access confirmed", "met": bool(mc and mc["access_confirmed"])},
-        {"key": "willing", "label": "Candidate confirms continued willingness", "met": app["candidate_willing"] == 1},
-        {"key": "sponsor", "label": "Entity sponsor authorisation", "met": bool(sd)},
-    ]
+# ------------------------------------------------------------------ dashboard
+def dashboard(initiative_id: int | None = None, entity: int | None = None, category: str | None = None) -> dict:
+    sql = ("SELECT c.*, e.name AS entity_name, i.name AS initiative_name FROM candidates c LEFT JOIN entities e ON e.id=c.entity_id "
+           "JOIN initiatives i ON i.id=c.initiative_id WHERE c.status!='Withdrawn'")
+    args: list = []
+    if initiative_id:
+        sql += " AND c.initiative_id=?"; args.append(initiative_id)
+    if entity:
+        sql += " AND c.entity_id=?"; args.append(entity)
+    if category == "Not yet rated":
+        sql += " AND c.fit_final IS NULL"
+    elif category:
+        sql += " AND c.fit_final=?"; args.append(category)
+    rows = db.q(sql + " ORDER BY e.name, c.name", args)
+    cats = scoring.FIT_CATEGORIES + ["Not yet rated"]
+    by_cat = {k: 0 for k in cats}
+    by_entity: dict[str, dict] = {}
+    for r in rows:
+        k = r["fit_final"] or "Not yet rated"
+        by_cat[k] += 1
+        e = by_entity.setdefault(r["entity_name"] or "—", {**{c: 0 for c in cats}, "total": 0, "approved": 0, "assessed": 0})
+        e[k] += 1
+        e["total"] += 1
+        e["approved"] += r["status"] == "Approved"
+        e["assessed"] += r["status"] in ("Assessed", "Approved", "Not Approved")
+    approved_by_cat = {k: sum(1 for r in rows if r["status"] == "Approved" and (r["fit_final"] or "Not yet rated") == k) for k in cats}
+    return {"rows": rows, "entities": len({r["entity_id"] for r in rows}), "champions": len(rows), "by_cat": by_cat,
+            "approved": sum(1 for r in rows if r["status"] == "Approved"), "by_entity": by_entity, "approved_by_cat": approved_by_cat,
+            "categories": cats}
 
 
-def sponsor_decide(app: dict, form: dict, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Awaiting Sponsor Decision":
-        raise WorkflowError("This application is not awaiting a sponsor decision.")
-    decision = form.get("decision")
-    if decision not in ("provisional", "not_selected", "defer"):
-        raise WorkflowError("Choose a decision.")
-    if not (form.get("rationale") or "").strip():
-        raise WorkflowError("A documented rationale is required.")
-    if form.get("coi_declared") not in ("none", "declared"):
-        raise WorkflowError("Please complete the conflict-of-interest declaration.")
-    if decision == "provisional":
-        unmet = [r["label"] for r in appointment_requirements(app) if not r["met"] and r["key"] != "sponsor"]
-        if unmet:
-            raise WorkflowError("Provisional appointment is blocked until these are confirmed: " + "; ".join(unmet))
-    db.ex("INSERT INTO sponsor_decisions(application_id, sponsor_email, decision, rationale, coverage_need, coi_declared, coi_details, conditions, decided_at) "
-          "VALUES (?,?,?,?,?,?,?,?,?)",
-          (app["id"], actor_email, decision, form["rationale"].strip(), form.get("coverage_need"),
-           1 if form["coi_declared"] == "declared" else 0, form.get("coi_details"), form.get("conditions"), db.now()))
-    db.audit("sponsor.decision", actor_role="sponsor", actor_email=actor_email, application_id=app["id"], decision=decision)
-    if decision == "provisional":
-        set_status(app["id"], "Provisionally Appointed", "sponsor")
-        send_nominee_link(get_app(app["id"]), "provisional_appointment")
-    elif decision == "not_selected":
-        set_status(app["id"], "Not Selected", "sponsor")
-        send_nominee_link(get_app(app["id"]), "unsuccessful")
+# ------------------------------------------------------------------ jobs
+async def run_jobs() -> str:
+    retried = 0
+    for r in db.q("SELECT id FROM candidates WHERE status='Assessing'"):
+        try:
+            if await run_assessment(r["id"]):
+                retried += 1
+        except Exception as e:
+            db.audit("jobs.error", candidate_id=r["id"], error=str(e))
+    rescreened = 0
+    for r in db.q("SELECT id FROM candidates WHERE status='CV Uploaded' AND consent_screening=1 AND last_error IS NOT NULL"):
+        rescreened += 1 if await screen(r["id"]) else 0
+    purged = purge_expired()
+    return f"{retried} assessment(s) completed, {rescreened} CV screening(s) retried, {purged} closed record(s) past retention cleared."
 
 
-def accept_role(app: dict, accept: bool, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Provisionally Appointed":
-        raise WorkflowError("There is no role offer to respond to.")
-    if not accept:
-        withdraw(app, "Declined role charter", "nominee", actor_email)
-        return
-    ver = scoring.current_config()[1]["role_charter_version"]
-    checklist = {item: (item == "Role charter accepted") for item in ONBOARDING_CHECKLIST}
-    db.ex("INSERT OR REPLACE INTO onboarding(application_id, accepted_at, charter_version, checklist_json) VALUES (?,?,?,?)",
-          (app["id"], db.now(), ver, json.dumps(checklist)))
-    db.audit("role.accepted", actor_role="nominee", actor_email=actor_email, application_id=app["id"], charter_version=ver)
-    set_status(app["id"], "Onboarding", "nominee")
-    send_nominee_link(get_app(app["id"]), "onboarding")
-
-
-def update_onboarding(app: dict, form: dict, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Onboarding":
-        raise WorkflowError("Onboarding is not in progress.")
-    ob = db.q1("SELECT * FROM onboarding WHERE application_id=?", (app["id"],))
-    checklist = {item: bool(form.get(f"check_{i}")) or (item == "Role charter accepted") for i, item in enumerate(ONBOARDING_CHECKLIST)}
-    start = form.get("start_date") or ob.get("start_date")
-    day90 = (date.fromisoformat(start) + timedelta(days=90)).isoformat() if start else None
-    db.ex("UPDATE onboarding SET buddy=?, objective=?, start_date=?, day90_date=?, checklist_json=? WHERE application_id=?",
-          (form.get("buddy"), form.get("objective"), start, day90, json.dumps(checklist), app["id"]))
-    db.audit("onboarding.updated", actor_role="lead", actor_email=actor_email, application_id=app["id"])
-    if form.get("complete"):
-        if not (form.get("buddy") and form.get("objective") and start and all(checklist.values())):
-            raise WorkflowError("Assign a buddy, set the initial workflow objective and start date, and complete every checklist item first.")
-        set_status(app["id"], "Awaiting Day-90 Review", "lead")
-
-
-def day90_input(app: dict, who: str, form: dict, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Awaiting Day-90 Review":
-        raise WorkflowError("The day-90 review is not open.")
-    if not db.q1("SELECT 1 FROM day90_reviews WHERE application_id=?", (app["id"],)):
-        db.ex("INSERT INTO day90_reviews(application_id) VALUES (?)", (app["id"],))
-    payload = json.dumps({k: form.get(k) for k in ("readiness", "contribution", "workload", "willing", "comments")})
-    col = "nominee" if who == "nominee" else "manager"
-    db.ex(f"UPDATE day90_reviews SET {col}_json=?, {col}_at=? WHERE application_id=?", (payload, db.now(), app["id"]))
-    db.audit(f"day90.{col}_input", actor_role=who, actor_email=actor_email, application_id=app["id"])
-
-
-def day90_decide(app: dict, form: dict, actor_email: str) -> None:
-    _ensure_active(app)
-    if app["status"] != "Awaiting Day-90 Review":
-        raise WorkflowError("The day-90 review is not open.")
-    rv = db.q1("SELECT * FROM day90_reviews WHERE application_id=?", (app["id"],))
-    if not rv or not rv["nominee_json"] or not rv["manager_json"]:
-        raise WorkflowError("Nominee and manager day-90 inputs are both required before an outcome is recorded.")
-    outcome = form.get("outcome")
-    if outcome not in ("confirmed", "extended", "concluded") or not (form.get("rationale") or "").strip():
-        raise WorkflowError("Choose an outcome and record a rationale.")
-    db.ex("UPDATE day90_reviews SET outcome=?, rationale=?, decided_by=?, decided_at=? WHERE application_id=?",
-          (outcome, form["rationale"].strip(), actor_email, db.now(), app["id"]))
-    db.audit("day90.decision", actor_role="sponsor", actor_email=actor_email, application_id=app["id"], outcome=outcome)
-    if outcome == "confirmed":
-        set_status(app["id"], "Confirmed", "sponsor")
-    elif outcome == "concluded":
-        set_status(app["id"], "Appointment Concluded", "sponsor")
-    else:
-        ob = db.q1("SELECT day90_date FROM onboarding WHERE application_id=?", (app["id"],))
-        new_date = (date.fromisoformat(ob["day90_date"]) + timedelta(days=60)).isoformat() if ob and ob["day90_date"] else None
-        db.ex("UPDATE onboarding SET day90_date=? WHERE application_id=?", (new_date, app["id"]))
-        db.ex("UPDATE day90_reviews SET nominee_json=NULL, manager_json=NULL WHERE application_id=?", (app["id"],))
-        db.audit("day90.extended", application_id=app["id"], new_review_date=new_date)
-
-
-def withdraw(app: dict, reason: str, actor: str, actor_email: str | None = None) -> None:
-    if app["status"] in ("Withdrawn",):
-        return
-    db.ex("UPDATE applications SET withdrawn_at=?, withdrawn_reason=? WHERE id=?", (db.now(), reason, app["id"]))
-    set_status(app["id"], "Withdrawn", actor, reason=reason)
-    security.revoke_for_application(app["id"], "manager")
-    emails.send("withdrawal", app["nominee_email"], _ctx(app), application=get_app(app["id"]), triggered_by=actor)
-
-
-def communicate_outcome(app: dict, actor_email: str) -> None:
-    if app["status"] != "Assessment Complete" or app["outcome"] == scoring.OUTCOME_MEETS:
-        raise WorkflowError("There is no unsuccessful outcome to communicate.")
-    db.ex("UPDATE applications SET outcome_communicated_at=? WHERE id=?", (db.now(), app["id"]))
-    set_status(app["id"], "Not Selected", "lead")
-    send_nominee_link(get_app(app["id"]), "unsuccessful", triggered_by="lead")
-
-
-# ------------------------------------------------------------------ next action
-def next_action(app: dict) -> dict:
-    cfg = scoring.current_config()[1]
-    s = app["status"]
-    due = None
-    if s in cfg["sla_days"]:
-        due = _due(app["status_changed_at"], int(cfg["sla_days"][s]))
-    sponsors = ", ".join(c["name"] for c in contacts(app["entity_id"], "sponsor")) or "Entity sponsor"
-    mgr = app.get("manager_name") or "Line manager"
-    nominee = app["nominee_name"]
-    table = {
-        "Nominated": ("Resend consent link (email not yet delivered)", "Entity focal point", "focal"),
-        "Awaiting Consent": ("Give or decline consent", nominee, "nominee"),
-        "Application in Progress": ("Complete and submit application", nominee, "nominee"),
-        "Submitted": ("Automated assessment queued" if not app.get("last_error") else "Automated assessment retry", "Automated assessment service", "system"),
-        "Automated Assessment in Progress": ("Automated assessment running", "Automated assessment service", "system"),
-        "Awaiting Evidence": ("Answer clarification questions", nominee, "nominee"),
-        "Reassessment Required": ("Complete remediation exercise", nominee, "nominee"),
-        "Assessment Complete": ("Communicate assessment outcome", "CDP Change Lead", "lead"),
-        "Awaiting Manager Commitment": ("Confirm protected time, workload and access" + ("" if app.get("candidate_willing") == 1 else "; nominee to confirm willingness"), mgr, "manager"),
-        "Awaiting Sponsor Decision": ("Record provisional appointment decision", sponsors, "sponsor"),
-        "Provisionally Appointed": ("Accept role charter", nominee, "nominee"),
-        "Onboarding": ("Assign buddy, complete onboarding checklist", "Programme team", "lead"),
-        "Awaiting Day-90 Review": ("Complete day-90 review", f"{nominee}, {mgr}, {sponsors}", "sponsor"),
-    }
-    if s == "Awaiting Day-90 Review":
-        ob = db.q1("SELECT day90_date FROM onboarding WHERE application_id=?", (app["id"],))
-        due = ob["day90_date"] if ob else None
-    if s in TERMINAL:
-        return {"action": "None — closed", "owner": "—", "owner_role": None, "due": None, "overdue": False}
-    action, owner, role = table[s]
-    overdue = bool(due and due < date.today().isoformat())
-    return {"action": action, "owner": owner, "owner_role": role, "due": due, "overdue": overdue}
-
-
-# ------------------------------------------------------------------ retention
-def purge_expired(actor_email: str) -> int:
+def purge_expired() -> int:
     days = int(scoring.current_config()[1]["retention_days"])
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    apps = db.q("SELECT id FROM applications WHERE status IN ('Withdrawn','Not Selected','Appointment Concluded') AND status_changed_at < ?", (cutoff,))
-    for a in apps:
-        delete_documents(a["id"], actor_email, reason=f"Retention period of {days} days elapsed")
-    return len(apps)
+    rows = db.q("SELECT c.id FROM candidates c JOIN initiatives i ON i.id=c.initiative_id "
+                "WHERE (i.status='closed' OR c.status IN ('Withdrawn','Not Approved','Not Shortlisted','No Consent')) AND c.status_changed_at < ? "
+                "AND EXISTS (SELECT 1 FROM documents d WHERE d.candidate_id=c.id AND d.extract_status!='deleted')", (cutoff,))
+    for r in rows:
+        delete_documents(r["id"], f"Retention period of {days} days elapsed")
+    return len(rows)
 
 
-def delete_documents(app_id: int, actor_email: str, reason: str) -> None:
-    for d in db.q("SELECT * FROM documents WHERE application_id=? AND extract_status!='deleted'", (app_id,)):
-        if d["stored_path"]:
-            Path(d["stored_path"]).unlink(missing_ok=True)
-    db.ex("UPDATE documents SET stored_path=NULL, extracted_text=NULL, extract_status='deleted' WHERE application_id=?", (app_id,))
-    db.ex("UPDATE evidence_versions SET snapshot_json='{\"sources\":[],\"deleted\":true}' WHERE application_id=?", (app_id,))
-    db.audit("retention.deleted", actor_role="lead", actor_email=actor_email, application_id=app_id, reason=reason)
+def delete_documents(cid: int, reason: str) -> None:
+    for d in db.q("SELECT stored_path FROM documents WHERE candidate_id=? AND stored_path IS NOT NULL", (cid,)):
+        Path(d["stored_path"]).unlink(missing_ok=True)
+    db.ex("UPDATE documents SET stored_path=NULL, extracted_text=NULL, extract_status='deleted' WHERE candidate_id=?", (cid,))
+    db.ex("UPDATE evidence_versions SET snapshot_json='{\"sources\":[],\"deleted\":true}' WHERE candidate_id=?", (cid,))
+    db.audit("retention.deleted", actor="lead", candidate_id=cid, reason=reason)

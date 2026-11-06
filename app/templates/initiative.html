@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ i.name }} · CDP Champion Selection{% endblock %}{% block content %}
+<p><a href="/">← Dashboard</a></p>
+<h1>{{ i.name }}{% if i.status == "closed" %} <span class="pill">closed</span>{% endif %}</h1>
+<p class="muted">{{ i.platform or "" }}{% if i.platform and i.description %} · {% endif %}{{ i.description or "" }}</p>
+
+<div class="layout-2">
+<section class="card tracker" aria-label="Step tracker"><h2>Steps</h2>
+<ol class="steplist">{% for s in steps %}
+<li class="{{ 'done' if s.completed_at else ('current' if s.current else '') }}">
+  <div class="stepnum" aria-hidden="true">{{ "✓" if s.completed_at else s.no }}</div>
+  <div class="stepbody"><strong>{{ s.title }}</strong>{% if s.current %} <span class="pill info">next</span>{% endif %}
+    <div class="small muted">{{ s.hint }}</div>
+    {% if s.progress %}<div class="small">{{ s.progress }}</div>{% endif %}
+    {% if s.completed_at %}<div class="small muted">Completed {{ s.completed_at[:10] }}</div>{% endif %}
+  </div>
+  <form method="post" action="/i/{{ i.id }}/step/{{ s.no }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if s.completed_at %}<input type="hidden" name="complete" value="0"><button class="small secondary" aria-label="Reopen step {{ s.no }}">Reopen</button>
+  {% else %}<input type="hidden" name="complete" value="1"><button class="small" aria-label="Mark step {{ s.no }} complete">Mark complete</button>{% endif %}</form>
+</li>{% endfor %}</ol>
+</section>
+
+<div class="stack">
+<section class="card"><h2>Step 2 · Import survey results</h2>
+<p class="small muted">Upload the Excel or CSV export from your survey tool. You'll check the matched columns before anything is imported.</p>
+<form method="post" action="/i/{{ i.id }}/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="file" name="file" accept=".xlsx,.csv" required aria-label="Survey export file"><div class="actions"><button>Upload survey file</button></div></form></section>
+
+<section class="card"><h2>Step 3 · Upload CVs</h2>
+<p class="small muted">Select many files at once. Files are matched to nominees by the name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>); you can assign any that don't match.</p>
+<form method="post" action="/i/{{ i.id }}/cvs" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="file" name="files" accept=".pdf,.docx" multiple required aria-label="CV files"><div class="actions"><button>Upload CVs</button></div></form></section>
+
+<section class="card"><h2>Step 4 · AI fit rating</h2>
+<p class="small muted">{{ eligible }} CV(s) ready to screen. Only nominees with recorded consent are screened. High and Moderate Fit are shortlisted automatically; you can change any category with a reason on the nominee's page.</p>
+<form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>Run AI fit rating</button></form></section>
+
+<section class="card"><h2>Step 6 · Send assessment links</h2>
+<p class="small muted">{{ shortlisted }} shortlisted candidate(s). Download a mail-merge list (name, email, personal link) and send the links from your own mailbox. Creating links again replaces older ones.</p>
+<form method="post" action="/i/{{ i.id }}/links.csv" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}">
+<button name="scope" value="new" {{ "disabled" if not shortlisted }}>Download links for candidates without one</button>
+<button name="scope" value="all" class="secondary" {{ "disabled" if not shortlisted }}>Recreate all links</button></form></section>
+</div>
+</div>
+
+<section class="card"><h2>Nominees</h2>
+<form method="get" class="actions" style="margin-top:0"><label for="st" class="sr">Filter by status</label><select id="st" name="status" style="max-width:260px"><option value="">All statuses</option>{% for s in statuses %}<option {{ "selected" if status == s }}>{{ s }}</option>{% endfor %}</select><button class="small secondary">Filter</button>
+<a class="btn secondary small" href="/i/{{ i.id }}/export.csv">Export (CSV)</a></form>
+<div class="table-wrap" style="margin-top:10px"><table>
+<thead><tr><th>Name</th><th>Entity</th><th>Platform</th><th>Consent</th><th>CV</th><th>CV fit</th><th>Status</th><th>Outcome</th></tr></thead>
+<tbody>{% for c in cands %}<tr>
+<td><a href="/c/{{ c.id }}">{{ c.name }}</a><br><span class="small muted">{{ c.ref }}</span></td><td>{{ c.entity_name }}</td><td class="small">{{ c.platform or "—" }}</td>
+<td>{{ "✓" if c.consent_screening else "✗" }}</td>
+<td class="small">{% if c.cv_status == "ok" %}✓{% elif c.cv_status %}<span class="pill warn">{{ c.cv_status }}</span>{% else %}—{% endif %}</td>
+<td>{{ m.fit_pill(c.fit_final) }}{% if c.fit_override_reason %} <span class="small muted" title="{{ c.fit_override_reason }}">(changed)</span>{% endif %}</td>
+<td>{{ m.status_pill(c.status) }}{% if c.last_error %}<div class="small overdue">{{ c.last_error }}</div>{% endif %}</td><td>{{ m.outcome_pill(c.outcome) }}</td></tr>
+{% else %}<tr><td colspan="8">No nominees yet. Import the survey results (step 2).</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+<details class="card"><summary>Edit or close this initiative</summary>
+<form method="post" action="/i/{{ i.id }}/edit" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div><label for="en">Name</label><input id="en" type="text" name="name" value="{{ i.name }}"></div>
+<div><label for="ep">Platform</label><input id="ep" type="text" name="platform" value="{{ i.platform or '' }}"></div>
+<div><label for="ed">Description</label><input id="ed" type="text" name="description" value="{{ i.description or '' }}"></div>
+<div><button class="secondary">Save</button></div></form>
+<form method="post" action="/i/{{ i.id }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="close"><input type="hidden" name="closed" value="{{ '0' if i.status == 'closed' else '1' }}">
+<div class="actions"><button class="secondary small">{{ "Reopen initiative" if i.status == "closed" else "Close initiative" }}</button></div></form>
+</details>
+{% endblock %}
