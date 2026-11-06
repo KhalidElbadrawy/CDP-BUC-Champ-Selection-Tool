@@ -1,0 +1,51 @@
+# Render Blueprint: Render reads this file and sets up the web app, its storage and settings.
+# Private values (marked sync: false) are typed into Render's screen, never stored in GitHub.
+services:
+  - type: web
+    name: cdp-champion-tool
+    runtime: python
+    plan: starter                 # paid plan: needed for the persistent disk below
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /static/style.css
+    disk:
+      name: cdp-data              # keeps records and uploaded CVs across restarts
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: CDP_ENV
+        value: production         # turns on the safety lock; the demo launcher is always off
+      - key: CDP_AI_MODE
+        value: live
+      - key: CDP_MODEL
+        value: claude-sonnet-5-5
+      - key: CDP_DB
+        value: /var/data/cdp.sqlite3
+      - key: CDP_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: CDP_DEMO_LAUNCHER
+        value: "0"
+      - key: CDP_JOBS_EVERY_HOURS
+        value: "24"               # daily: retry failed assessments, send due reminders, apply retention
+      - key: CDP_SECRET_KEY
+        generateValue: true       # Render creates a random value for you
+      - key: ANTHROPIC_API_KEY
+        sync: false               # you paste this into Render
+      - key: CDP_LEAD_EMAIL
+        sync: false
+      - key: CDP_BASE_URL
+        sync: false               # e.g. https://cdp-champion-tool.onrender.com
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_STARTTLS
+        value: "true"

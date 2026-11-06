@@ -36,7 +36,18 @@ Run the validation suite:
 | `CDP_BASE_URL` | Public HTTPS URL used in emailed links. Use HTTPS in production so cookies are `Secure`. |
 | `CDP_SECRET_KEY`, `CDP_LEAD_EMAIL` | CSRF signing key; the CDP Change Lead's address (used to request the central dashboard link at `/access`). |
 
-When SMTP is configured, the demo launcher switches off automatically (or set `CDP_DEMO_LAUNCHER=0`). Schedule `POST /lead/jobs` (or the "Run scheduled jobs" button) daily. It retries failed assessments, sends due reminders, and applies the retention policy.
+When SMTP is configured, the demo launcher switches off automatically (or set `CDP_DEMO_LAUNCHER=0`). Set `CDP_JOBS_EVERY_HOURS=24` (already set in `render.yaml`), or use the "Run scheduled jobs" button. The jobs retry failed assessments, sends due reminders, and applies the retention policy.
+
+## Publish online (Render)
+
+`render.yaml` sets everything up: Python server, a 1 GB persistent disk at `/var/data`, the daily job scheduler, and the production safety lock.
+
+1. In Render, choose **New → Blueprint** and select this repository.
+2. Fill in the values Render asks for: `ANTHROPIC_API_KEY`, `CDP_LEAD_EMAIL`, `CDP_BASE_URL` (the app's `https://…onrender.com` address), and the `SMTP_*` email settings. `CDP_SECRET_KEY` is generated for you.
+3. Deploy. Until every required setting is in place, the site shows only a **Setup incomplete** checklist. The demo launcher is always off in production.
+4. Open `https://<your-app>/access`, enter `CDP_LEAD_EMAIL`, and use the emailed link to reach the central dashboard.
+
+Do **not** run `python -m app.seed` on the server; it wipes the database and loads fictional demo data.
 
 ## Walkthrough
 
@@ -91,6 +102,7 @@ app/
   emails.py      editable templates, SMTP/outbox delivery, reminder throttling
   extraction.py  PDF/DOCX extraction, unreadable handling, redaction
   main.py        routes for the six screen types
+  production.py  production safety lock + built-in job scheduler
   seed.py        fictional demo data
   templates/     Jinja templates (EN/AR, RTL)
 tests/test_mvp.py  validation checklist

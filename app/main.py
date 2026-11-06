@@ -1,9 +1,11 @@
 """FastAPI application: routes for all six screen types. Permissions are enforced here, server-side."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
+import logging
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -16,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import ai, config, db, emails, scoring, security, workflow
+from app import ai, config, db, emails, production, scoring, security, workflow
 from app.i18n import translator
 from app.security import COOKIE, LinkError, Principal
 from app.workflow import WorkflowError
@@ -27,7 +29,11 @@ HERE = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app):
     startup()
+    for problem in production.setup_problems():
+        logging.getLogger("cdp").error("SETUP INCOMPLETE: %s", problem)
+    task = asyncio.create_task(production.scheduler_loop())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="CDP Champion Nomination Tool", lifespan=lifespan)
@@ -46,7 +52,24 @@ def startup() -> None:
 
 
 def demo_launcher_enabled() -> bool:
+    if production.is_production():
+        return False  # never on a public server
     return os.environ.get("CDP_DEMO_LAUNCHER", "1") == "1" and config.settings.email_mode == "demo"
+
+
+@app.middleware("http")
+async def production_lock(request: Request, call_next):
+    """On a public server, show only a setup checklist until every required setting is in place."""
+    problems = production.setup_problems()
+    if problems and not request.url.path.startswith("/static"):
+        items = "".join(f"<li>{p}</li>" for p in problems)
+        html = ("<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>Setup incomplete</title><link rel='stylesheet' href='/static/style.css'></head><body><main class='wrap'>"
+                "<div class='card' style='margin-top:24px'><h1>Setup incomplete</h1><p>The CDP Champion tool is locked until these "
+                f"settings are added in the hosting service's Environment settings:</p><ul>{items}</ul>"
+                "<p class='muted'>After saving the settings, the service restarts and this page disappears.</p></div></main></body></html>")
+        return HTMLResponse(html, status_code=503)
+    return await call_next(request)
 
 
 # ------------------------------------------------------------------ rendering helpers
