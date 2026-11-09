@@ -313,10 +313,13 @@ def test_clear_initiative_data(client):
     assert not db.q1("SELECT 1 FROM initiatives WHERE id=?", (iid,))
 
 
-# ---------------------------------------------------------------- NEXUS game
-from app import game  # noqa: E402
+# ---------------------------------------------------------------- LAUNCH WINDOW game
+from pathlib import Path  # noqa: E402
 
+from app import game, launch_content  # noqa: E402
 from app.seed import GOOD_PLAY  # noqa: E402
+
+STATIC = Path(__file__).resolve().parent.parent / "app" / "static" / "launch"
 
 
 def game_candidate(name, extra=1.0):
@@ -329,61 +332,75 @@ def game_candidate(name, extra=1.0):
     return workflow.cand(c["id"])
 
 
-def play(c, moves):
+def play(c, moves, lang="en"):
     v = None
     for a, p in moves:
-        v = workflow.game_action(workflow.cand(c["id"]), a, p)
+        v = workflow.game_action(workflow.cand(c["id"]), a, p, lang)
         assert not v.get("error"), (a, v.get("error"))
     return v
+
+
+def upto(action, choice=None):
+    """GOOD_PLAY up to (not including) the first move with this action (and choice)."""
+    for i, (a, p) in enumerate(GOOD_PLAY):
+        if a == action and (choice is None or p.get("choice") == choice):
+            return GOOD_PLAY[:i]
+    raise AssertionError(action)
 
 
 def test_full_game_assessed_with_event_evidence():
     c = game_candidate("Game Good")
     v = play(c, GOOD_PLAY)
-    assert v["finished"] and v["outcome"]["connected"] == "6 of 6"
+    assert v["finished"] and v["phase"] == "done" and v["result"]["ending"]
     assert workflow.cand(c["id"])["status"] == "Assessing"
+    state, events = workflow.game_load(c["id"])
+    assert sum(1 for e in events if e["type"] == "peer_payoff") == 2         # Khalid and Noor helped without the player
     r = asyncio.run(workflow.run_assessment(c["id"]))
     assert r["outcome"] == scoring.OUTCOME_MEETS
     snap = json.loads(db.q1("SELECT snapshot_json FROM evidence_versions WHERE candidate_id=? ORDER BY version DESC", (c["id"],))["snapshot_json"])
+    ids = {s["id"] for s in snap["sources"]}
+    assert {"GAME-credibility", "GAME-judgment", "GAME-handover", "REAL-1", "REAL-2"} <= ids
     text = "\n".join(s["text"] for s in snap["sources"])
     assert re.search(r"\bE\d+\b", text)                                  # evidence cites game events
-    assert "services restored" not in text and "restored_pct" not in text  # game outcome kept out of the evidence
-    assert db.q1("SELECT outcome_json FROM game_sessions WHERE candidate_id=?", (c["id"],))["outcome_json"]
+    assert "Launch Lead" not in text and "trust" not in text.lower()     # game outcome kept out of the evidence
+    out = json.loads(db.q1("SELECT outcome_json FROM game_sessions WHERE candidate_id=?", (c["id"],))["outcome_json"])
+    assert out["ending"] == "held" and out["rank"]
 
 
-def test_switching_off_safety_lock_needs_remediation():
+def test_overriding_safety_lock_needs_remediation():
     c = game_candidate("Game Unsafe")
-    moves = [m for m in GOOD_PLAY if not (m[0] == "stress_choice" and m[1].get("choice") == "refuse_escalate")]
-    i = moves.index(("stress_choice", {"choice": "protect_clinic"}))
-    moves.insert(i, ("stress_choice", {"choice": "switch_off"}))
-    play(c, moves)
+    moves = [("director", {"choice": "override"}) if a == "director" else (a, p) for a, p in GOOD_PLAY]
+    v = play(c, moves)
+    assert v["result"]["ending"] and json.loads(db.q1("SELECT outcome_json FROM game_sessions WHERE candidate_id=?", (c["id"],))["outcome_json"])["ending"] == "override"
     r = asyncio.run(workflow.run_assessment(c["id"]))
     assert r["outcome"] == scoring.OUTCOME_REMEDIATION
     assert workflow.open_clarifications(c["id"])[0]["kind"] == "remediation"
 
 
-def test_hidden_information_and_practice_not_assessed():
-    c = game_candidate("Game Hidden")
-    v = workflow.game_action(c, "start_practice", {})
-    assert v["districts"]["clinic"]["detail"] is None                   # blockers hidden until inspected
-    v = workflow.game_action(workflow.cand(c["id"]), "fix", {"district": "harbour"})
-    v = workflow.game_action(workflow.cand(c["id"]), "finish_practice", {})
+def test_own_words_and_earned_hints():
+    c = game_candidate("Game Words")
+    moves = [m for m in upto("noor") if not (m[0] == "open_file" and m[1]["id"] == "F6")]
+    v = play(c, moves)
+    assert v["phase"] == "act2" and v["noor"]["step"] == "n1"
+    v = play(c, [("noor", {"text": "Let's do it together, I'll guide you step by step."})])
+    assert v["noor"]["step"] == "n2" and v["noor"]["hint"] is None          # the valve guide was not read, so no hint
     state, events = workflow.game_load(c["id"])
-    assert any(e["practice"] for e in events) and state["districts"]["harbour"]["dependency"] == 0
-    assert not any("fixed Harbour personally" in l for l in game.evidence(state, events)["lines"]["credibility"])
+    assert state["noor"]["path"] == ["coach"] and state["free_text"]["n1"].startswith("Let's do it")
+    src, _ = game.snapshot_sources(state, events)
+    assert any(s["id"] == "GAME-words-n1" for s in src)
 
 
-def test_stress_timer_enforced_on_server():
+def test_wave_timer_enforced_on_server():
     c = game_candidate("Game Timer", extra=1.5)
-    play(c, GOOD_PLAY[:GOOD_PLAY.index(("read_brief", {}), 2) + 1])     # into round 2: stress S1 starts
+    play(c, upto("alert"))
     state, events = workflow.game_load(c["id"])
-    assert state["phase"] == "stress" and state["stress"]["seconds"] == 90  # 60s x 1.5 extra time
-    state["stress"]["deadline"] = "2000-01-01T00:00:00+00:00"           # time has run out
+    assert state["phase"] == "act3" and state["stage"] == "w1" and state["stage_seconds"] == 112   # 75s x 1.5
+    state["deadline"] = "2000-01-01T00:00:00+00:00"                     # time has run out
     workflow.game_save(c["id"], state, events)
     v = workflow.game_action(workflow.cand(c["id"]), "poll", {})
     _, events = workflow.game_load(c["id"])
-    assert v["phase"] == "playing" and any(e["type"] == "stress_timeout" for e in events)
-    v = workflow.game_action(workflow.cand(c["id"]), "stress_choice", {"choice": "fix_for_them"})
+    assert v["stage"] == "director" and sum(1 for e in events if e["type"] == "alert_missed") == 3
+    v = workflow.game_action(workflow.cand(c["id"]), "alert", {"id": "A1", "choice": "handle"})
     assert v.get("error")                                               # a late answer is not accepted
 
 
@@ -394,9 +411,32 @@ def test_overall_clock_ends_game():
     state["ends_at"] = "2000-01-01T00:00:00+00:00"
     workflow.game_save(c["id"], state, events)
     v = workflow.game_action(workflow.cand(c["id"]), "poll", {})
-    assert v["phase"] == "handover"
-    v = play(c, [("handover", {"text": "Nothing finished yet; Harbour needs training, owned by the Trainer team."})])
-    assert v["finished"] and workflow.cand(c["id"])["status"] == "Assessing"
+    assert v["finished"] and v["end_reason"] == "time"
+    assert workflow.cand(c["id"])["status"] == "Assessing"
+
+
+def test_arabic_view_and_every_asset_exists():
+    state = game.new_state()
+    v = game.view(state, "ar")
+    assert "السماعات" in v["objective"] and "ستون دقيقة" in v["lines"]["N01"]["text"]
+    for lid in launch_content.LINES:
+        for lang in ("en", "ar"):
+            assert (STATIC / "vo" / lang / f"{lid}.mp3").stat().st_size > 2000, (lang, lid)
+    for img in ("map", "pad", "briefing", "control", "maryam", "noor", "saeed", "hamad", "yousef",
+                "av_maryam", "av_noor", "av_saeed", "av_hamad", "av_yousef"):
+        assert (STATIC / "img" / f"{img}.webp").exists(), img
+    for name in ("explore", "alert", "launch"):
+        assert (STATIC / "music" / f"{name}.mp3").exists()
+    js = (STATIC / "launch.js").read_text()
+    for sfx in set(re.findall(r'sfx\("(\w+)"\)', js)) | {"lights", "radio", "alarm", "heartbeat", "beep", "success", "ignition", "file", "ui", "rankup"}:
+        assert (STATIC / "sfx" / f"{sfx}.mp3").exists(), sfx
+
+
+def test_unfinished_old_game_restarts_in_launch_window():
+    c = game_candidate("Game Old")
+    db.ex("UPDATE game_sessions SET state_json=?, events_json='[]' WHERE candidate_id=?", (json.dumps({"version": 1, "phase": "playing"}), c["id"]))
+    v = workflow.game_action(workflow.cand(c["id"]), "poll", {})
+    assert v["phase"] == "intro"
 
 
 def test_cannot_switch_to_written_after_starting_game(client):
@@ -406,8 +446,9 @@ def test_cannot_switch_to_written_after_starting_game(client):
     r = client.post("/assess/mode", data={"csrf": csrf(client), "mode": "text"})
     assert "already started the game" in r.text
     assert client.post("/play/api", json={"action": "poll"}, headers={"x-csrf": "bad"}).status_code == 403
-    r = client.post("/play/api", json={"action": "poll"}, headers={"x-csrf": csrf(client)})
-    assert r.status_code == 200 and r.json()["phase"] == "intro"
+    r = client.post("/play/api", json={"action": "poll", "lang": "ar"}, headers={"x-csrf": csrf(client)})
+    assert r.status_code == 200 and r.json()["phase"] == "intro" and r.json()["lang"] == "ar"
+    assert "LAUNCH WINDOW" in client.get("/play").text
     workflow.game_reset(workflow.cand(c["id"]))
     assert workflow.game_load(c["id"])[0] is None
 

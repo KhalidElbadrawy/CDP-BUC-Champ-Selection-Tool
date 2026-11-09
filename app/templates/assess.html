@@ -1,11 +1,11 @@
-{% extends "base.html" %}{% block title %}NEXUS · {{ _("CDP Champion assessment") }}{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}LAUNCH WINDOW · {{ _("CDP Champion assessment") }}{% endblock %}{% block content %}
 <div class="hero-nexus"><div class="eyebrow">{{ _("CDP Champion assessment") }}</div>
-<h1>NEXUS: {{ _("Reconnect the City") }}</h1>
-<p>{{ _("Six districts of the city have lost their connections. As a city champion, your job is to restore reliable services, help districts run on their own, and keep essential safety controls in place.") }}</p></div>
+<h1>LAUNCH WINDOW <span lang="ar" dir="rtl">نافذة الإطلاق</span></h1>
+<p>{{ _("A story game set at a fictional launch base in the last hour before a launch. You help the crew, handle alerts and make decisions against the clock.") }}</p></div>
 
 {% if c.status == "Invited" or (c.status == "In Assessment" and not c.consent_assessment_at) %}
 <div class="card"><h2>{{ _("Before you start") }}</h2>
-<p>{{ _("Hello") }} {{ c.name }}. {{ _("You have been shortlisted as a possible CDP Business User Champion. This assessment asks how you would handle situations in the NEXUS city. There are no trick questions; answer as you would really act.") }}</p>
+<p>{{ _("Hello") }} {{ c.name }}. {{ _("You have been shortlisted as a possible CDP Business User Champion. The assessment is a short story game. It looks at how you work with people, keep promises and make decisions under pressure. At the end there are two short questions about your real work. There are no trick questions; act as you really would.") }}</p>
 <ul><li>{{ _("Your answers are assessed by AI against a published scorecard, and the CDP Change Lead makes the final decision.") }}</li>
 <li>{{ _("It takes about 35 to 45 minutes. You can save and come back to this link.") }}</li>
 <li>{{ _("Your answers are seen only by the CDP Change Lead.") }}</li></ul>
@@ -21,20 +21,20 @@
 <div class="card"><h2>{{ _("Choose how to take the assessment") }}</h2>
 <div class="grid g2">
 <form method="post" action="/assess/mode" class="choice"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="mode" value="game">
-<h3>{{ _("Play NEXUS (recommended)") }}</h3>
-<ul class="small"><li>{{ _("A strategy game: six rounds restoring the city's districts, with a short practice first.") }}</li>
-<li>{{ _("About 45 minutes, with a visible clock and a few timed moments.") }}{% if c.extra_time and c.extra_time > 1 %} {{ _("Extra time has been added for you:") }} {{ c.extra_time }}×.{% endif %}</li>
-<li>{{ _("Best on a laptop or tablet. Your progress is saved after every move.") }}</li></ul>
-<button>{{ _("Play NEXUS") }}</button></form>
+<h3>{{ _("Play LAUNCH WINDOW (recommended)") }}</h3>
+<ul class="small"><li>{{ _("A role-playing game with voices, music and a countdown, in English or Arabic. Captions are always on.") }}</li>
+<li>{{ _("About 35 minutes plus two short questions, with a few timed moments.") }}{% if c.extra_time and c.extra_time > 1 %} {{ _("Extra time has been added for you:") }} {{ c.extra_time }}×.{% endif %}</li>
+<li>{{ _("Best on a laptop or tablet with sound. Your progress is saved after every move.") }}</li></ul>
+<button>{{ _("Play LAUNCH WINDOW") }}</button></form>
 <form method="post" action="/assess/mode" class="choice"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="mode" value="text">
 <h3>{{ _("Written version") }}</h3>
-<ul class="small"><li>{{ _("The same city situations, answered in writing.") }}</li><li>{{ _("Untimed, and works well with screen readers and on phones.") }}</li></ul>
+<ul class="small"><li>{{ _("The same launch-base situations, answered in writing.") }}</li><li>{{ _("Untimed, and works well with screen readers and on phones.") }}</li></ul>
 <button class="secondary">{{ _("Use the written version") }}</button></form>
 </div><p class="small muted">{{ _("Both versions are assessed against the same scorecard. Once you start one, you cannot switch.") }}</p></div>
 
 {% elif c.status == "In Assessment" %}
 <form method="post" action="/assess/save" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
-<h2>{{ _("The city scenarios") }}</h2><p class="muted">{{ _("Answer each scenario in your own words. Specific, practical answers help most.") }}</p>
+<h2>{{ _("The written scenarios") }}</h2><p class="muted">{{ _("Answer each scenario in your own words. Specific, practical answers help most.") }}</p>
 {% include "_scenario_fields.html" %}
 <div class="actions"><button name="action" value="save" class="secondary">{{ _("Save and continue later") }}</button><button name="action" value="submit">{{ _("Submit my answers") }}</button></div>
 <p class="small muted">{{ _("After you submit, you may be asked one or two short follow-up questions on this same link.") }}</p></form>

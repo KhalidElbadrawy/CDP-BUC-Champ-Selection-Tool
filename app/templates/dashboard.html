@@ -2,7 +2,7 @@
 <section class="hero" aria-labelledby="hero-title">
   <div class="eyebrow">CDP Business User Champions</div>
   <h1 id="hero-title">Find the people who<span class="line2">move colleagues forward</span></h1>
-  <p>Nominations, AI fit screening and NEXUS assessments across every initiative, in one place. Approve the champions who will help each entity adopt the Common Digital Platforms.</p>
+  <p>Nominations, AI fit screening and LAUNCH WINDOW assessments across every initiative, in one place. Approve the champions who will help each entity adopt the Common Digital Platforms.</p>
 </section>
 <form method="get" class="filters card" aria-label="Filters">
   <div><label for="fi">Initiative</label><select id="fi" name="initiative"><option value="">All initiatives</option>{% for i in initiatives %}<option value="{{ i.id }}" {{ "selected" if fi == i.id }}>{{ i.name }}</option>{% endfor %}</select></div>

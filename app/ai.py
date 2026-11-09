@@ -301,9 +301,13 @@ async def live_pass(snapshot: dict, assessor: str) -> dict:
     system = ("You are an independent assessor for the CDP Business User Champion programme. "
               "Assess the candidate against the scorecard. Another assessor works separately; you will never "
               "see their work and they will never see yours.\n" + GUARDRAILS + "\n\n" + rubric_text())
-    game_note = ("This evidence is the record of the candidate's play in NEXUS, a strategy game. Each line cites an event id "
-                 "(E12 etc.); cite those ids in your excerpts. Rate demonstrated behaviour in the game, not the game score: "
-                 "the game outcome is deliberately excluded. Choices made under a countdown are stress moments.\n\n"
+    game_note = ("This evidence is the record of the candidate's play in LAUNCH WINDOW, a role-playing game set at a fictional "
+                 "launch base: the candidate helps crew members, handles alerts and is ordered to override a safety lock. The "
+                 "game never mentions champions; read each scene for the behaviour it reveals. Each line cites an event id "
+                 "(E12 etc.); cite those ids in your excerpts. Rate demonstrated behaviour, not the game score: trust, readiness, "
+                 "rank and the launch ending are deliberately excluded. Choices made under a countdown are stress moments. "
+                 "Sources REAL-1 and REAL-2 are the candidate's written answers about their real work: use them as job-related "
+                 "evidence alongside the game record.\n\n"
                  if snapshot.get("game_indicators") else "")
     prompt = (game_note + "Assess this evidence. For every criterion return rating (1-5 or null), rating_basis, excerpts "
               "with source ids, reasoning, evidence_strength, missing_evidence, contradictions and unsafe flags.\n\n"
@@ -353,7 +357,7 @@ UNSAFE = ["bypass it", "share my login", "share my password", "use my account", 
           "give them my", "lend my"]
 CLARIFY_BANK = {
     "credibility": "Back in Harbour district: describe step by step what you would do so Harbour's team can fix routing themselves next time, and what would show you that other districts were adopting the same approach.",
-    "empathy": "Please complete Kai's coaching exchange: reply to each of Kai's three messages as you would to a worried colleague.",
+    "empathy": "Please complete Noor's coaching exchange: reply to each of Noor's three messages as you would to a worried colleague.",
     "reliability": "About your promise to Clinic district: explain exactly how you would record it, who you would update when resources were cut, and how you would make sure it was closed or handed over.",
     "curiosity": "When the routing rules changed: what would you do first to understand the new rules, which questions would you ask, and how would you test your new plan before using it?",
     "workflow": "Please complete every part of the Transit ticketing walkthrough, including the exceptions you expect and exactly when you would stop and refer.",
@@ -416,7 +420,7 @@ def _demo_rating(text: str, key: str, variant: str) -> dict:
 
 
 def demo_game_pass(snapshot: dict, variant: str) -> dict:
-    """Demo assessor for the NEXUS game: rule-based indicator ratings. Where a follow-up answer exists for a
+    """Demo assessor for the LAUNCH WINDOW game: rule-based indicator ratings. Where a follow-up answer exists for a
     criterion, that criterion is rated from the written answer instead."""
     from app import game
     out = {}
@@ -434,7 +438,7 @@ def demo_game_pass(snapshot: dict, variant: str) -> dict:
                   "evidence_strength": "moderate" if r["rating"] else "limited",
                   "missing_evidence": [] if r["rating"] else ["The game record holds too little evidence for this criterion."],
                   "contradictions": [], "unsafe": r["unsafe_serious"], "unsafe_serious": r["unsafe_serious"],
-                  "unsafe_note": "Switched off the safety lock under pressure." if r["unsafe_serious"] else None}
+                  "unsafe_note": "Agreed to override the safety lock under pressure." if r["unsafe_serious"] else None}
     return {"criteria": out}
 
 
@@ -513,7 +517,7 @@ def demo_cv_screen(cv_text: str, platform: str, workflow: str) -> dict:
                       "workflows": [workflow] if workflow and workflow.lower() in t else []},
         "evidence": [{"area": a, "excerpt": l[:200]} for a, v in found.items() for l in v],
         "gaps": gaps,
-        "phase2_focus": [f"Test {a} through the NEXUS scenarios." for a, v in found.items() if not v][:3],
+        "phase2_focus": [f"Test {a} through the LAUNCH WINDOW game or written scenarios." for a, v in found.items() if not v][:3],
     })
 
 

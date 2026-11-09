@@ -27,7 +27,7 @@ STEPS = [
     (4, "AI fit rating", "Run the AI CV screening: High, Moderate, Low or Doesn't Fit."),
     (5, "Review shortlist", "Check the shortlist and override any fit category with a reason."),
     (6, "Send assessment links", "Copy each personal link or export the mail-merge list and send from your mailbox."),
-    (7, "Assessments completed", "Nominees complete the NEXUS assessment; the AI assesses their evidence."),
+    (7, "Assessments completed", "Nominees complete the LAUNCH WINDOW assessment; the AI assesses their evidence."),
     (8, "Review reports", "Read each candidate's assessment report."),
     (9, "Approve champions", "Approve or decline each assessed candidate with a short rationale."),
 ]
@@ -353,14 +353,14 @@ def build_snapshot(c: dict) -> dict:
         return {"platform": c["platform"], "workflow": c["workflow"], "sources": sources,
                 "game_indicators": indicators, "game_outcome_excluded": True}
     answers = json.loads(c["answers_json"] or "{}")
-    origin = "offline document entered by the Change Lead" if c["assessment_mode"] == "offline" else "NEXUS text scenarios"
+    origin = "offline document entered by the Change Lead" if c["assessment_mode"] == "offline" else "LAUNCH WINDOW written scenarios"
     sources = []
     for cr in scoring.CRITERIA:
         k = cr["key"]
         if cr["task"] == "simulation":
             turns = [f"User: {u}\nCandidate: {answers.get(f'empathy_{i}', '').strip()}" for i, u in enumerate(scoring.EMPATHY_SIMULATION)]
             text = "\n".join(turns) if any(answers.get(f"empathy_{i}") for i in range(3)) else ""
-            label = f"Coaching exchange with Kai, the AI teammate ({origin}; performance within a digital exercise)"
+            label = f"Coaching exchange with Noor, a nervous rookie technician ({origin}; performance within a digital exercise)"
         elif cr["task"] == "walkthrough":
             parts = [f"Prompt: {q}\nCandidate: {answers.get('workflow_' + f, '').strip()}" for f, q in scoring.WORKFLOW_FIELDS]
             text = "\n".join(parts) if any(answers.get("workflow_" + f) for f, _ in scoring.WORKFLOW_FIELDS) else ""
@@ -602,7 +602,7 @@ def clear_initiative(iid: int, delete_initiative: bool = False) -> dict:
     return {"nominees": len(ids), "files": files}
 
 
-# ------------------------------------------------------------------ NEXUS game
+# ------------------------------------------------------------------ LAUNCH WINDOW game
 def game_load(cid: int) -> tuple[dict | None, list]:
     row = db.q1("SELECT * FROM game_sessions WHERE candidate_id=?", (cid,))
     if not row or not row["state_json"]:
@@ -621,7 +621,7 @@ def game_start(c: dict) -> dict:
     if c["status"] != "In Assessment" or not c["consent_assessment_at"]:
         raise WorkflowError("Please confirm your consent first.")
     state, _ = game_load(c["id"])
-    if state:
+    if state and state.get("game") == "launch_window":
         return state
     if c["assessment_mode"] == "text" and json.loads(c["answers_json"] or "{}"):
         raise WorkflowError("You have already started the written version.")
@@ -634,15 +634,18 @@ def game_start(c: dict) -> dict:
     return state
 
 
-def game_action(c: dict, action: str, params: dict) -> dict:
-    """Apply one action (or a timer check when action is 'poll'). Returns the browser view."""
+def game_action(c: dict, action: str, params: dict, lang: str = "en") -> dict:
+    """Apply one action (or a timer check when action is 'poll'). Returns the browser view in the player's language."""
     from app import game
     _active(c)
     state, events = game_load(c["id"])
     if not state:
         raise WorkflowError("The game has not been started.")
+    if state.get("game") != "launch_window" and c["status"] == "In Assessment":
+        state = game_start(c)  # an unfinished game from the previous engine restarts in LAUNCH WINDOW
+        events = []
     if c["status"] != "In Assessment":
-        return game.view(state)
+        return game.view(state, lang)
     before = len(events)
     if action == "poll":
         game.tick(state, events)
@@ -651,13 +654,13 @@ def game_action(c: dict, action: str, params: dict) -> dict:
             game.act(state, events, action, params)
         except game.GameError as e:
             game_save(c["id"], state, events)
-            v = game.view(state)
+            v = game.view(state, lang)
             v["error"] = str(e)
             return v
     game_save(c["id"], state, events)
     if state["finished"] and len(events) > before or (state["finished"] and c["status"] == "In Assessment"):
         game_finish(c["id"], state, events)
-    return game.view(state)
+    return game.view(state, lang)
 
 
 def game_finish(cid: int, state: dict, events: list) -> None:

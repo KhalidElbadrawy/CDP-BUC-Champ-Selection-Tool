@@ -660,7 +660,7 @@ async def assess_clarify(request: Request, background: BackgroundTasks):
     return back("/assess", msg="Thank you. Your answers have been submitted.")
 
 
-# ------------------------------------------------------------------ NEXUS game
+# ------------------------------------------------------------------ LAUNCH WINDOW game
 @app.post("/assess/mode")
 async def assess_mode(request: Request):
     c = me(request)
@@ -699,8 +699,9 @@ async def play_api(request: Request):
         body = {}
     action = str(body.get("action") or "poll")
     params = body.get("params") if isinstance(body.get("params"), dict) else {}
+    lang = "ar" if (body.get("lang") or request.cookies.get("lang")) == "ar" else "en"
     try:
-        view = workflow.game_action(c, action, params)
+        view = workflow.game_action(c, action, params, lang)
     except WorkflowError as e:
         return JSONResponse({"error": str(e)}, status_code=409)
     fresh = workflow.cand(c["id"])

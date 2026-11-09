@@ -16,25 +16,33 @@ Version 1 (the multi-role nomination tool) is kept on the `v1` and `main` branch
 4. **AI fit rating.** High and Moderate Fit are shortlisted automatically. A CV shows experience, not behaviour, so this is screening only.
 5. **Review shortlist.** Change any fit category with a recorded reason.
 6. **Send assessment links.** Download a mail-merge list (name, email, personal link) and send from your mailbox. Links expire and can be replaced or cancelled.
-7. **Assessments completed.** Nominees confirm consent and complete the NEXUS assessment. Follow-up questions appear on the same link when evidence is thin (up to 2 rounds). For anyone who can't use the link, enter their answers from an offline document.
+7. **Assessments completed.** Nominees confirm consent and complete the LAUNCH WINDOW assessment. Follow-up questions appear on the same link when evidence is thin (up to 2 rounds). For anyone who can't use the link, enter their answers from an offline document.
 8. **Review reports.** Each report shows the CV fit, the game outcome (kept separate), the evidence-linked ratings and a recommendation. Labelled AI-generated and provisional.
 9. **Approve champions** with a short rationale.
 
 The **dashboard** shows entities, champions nominated, counts per fit category and approved champions, filtered by initiative, entity and fit category, with a CSV export.
 
-## The NEXUS game (phase 2 assessment)
-Candidates choose the **NEXUS game** (recommended, laptop or tablet) or the **written version** (untimed, accessible). Once started, they cannot switch; you can reset an unfinished game after a technical problem.
+## LAUNCH WINDOW (phase 2 assessment)
+Candidates choose **LAUNCH WINDOW** (recommended, laptop or tablet with sound) or the **written version** (untimed, accessible, same story). Once started, they cannot switch; you can reset an unfinished game after a technical problem.
 
-- **Practice first** (untimed, not assessed), then **six rounds** restoring six districts: explore, diagnose blockers (skill gap, access, faulty equipment, policy), lay cables to connect districts to the core, and use limited energy and a small crew (Trainer, Engineer, Liaison).
-- **Lasting trade-off:** fixing a district yourself is quick but builds dependency; training it costs more but lets it run independently and coach its neighbours.
-- **Disruption (round 4):** new rules (Archive cables need a safety inspection) and an energy cut.
-- **Requests and promises:** districts ask for help; promises are tracked to the round they're due, and players can warn about delays.
-- **Co-op puzzle (round 5):** guide Kai, an AI teammate who sees information you can't. Kai is scripted, so every candidate faces the same puzzle; the player's own words are recorded.
-- **Stress moments:** four timed decisions (60–90 seconds), including a senior official demanding a safety lock is switched off. If time runs out, a default consequence applies and is recorded.
-- **Overall clock:** 45 minutes (Settings), multiplied by any extra time you grant a candidate.
-- **Handover note** at the end: what's unfinished, who owns it, what's next.
+LAUNCH WINDOW is a role-playing game in English or Arabic. The candidate joins the crew of a fictional launch base for the last hour before a launch. The game never mentions champions or the candidate's job: each scene is built so the six behaviours show up naturally.
 
-The game runs on the server: timers and consequences can't be tampered with, and every move is saved. The AI assesses the **game record**, with every rating citing event ids (for example E23). The **game outcome** (services restored, independent districts, safety controls kept) is shown separately in the report and is never part of the score. Ratings are provisional and should be calibrated in a pilot.
+| Scene | What the candidate does | Mainly reveals |
+|---|---|---|
+| Prologue | Opening cinematic; walk to the briefing hall (tutorial, not assessed) | — |
+| Act I · Briefing (3-minute clock) | Open up to 4 of 8 mission files, answer 3 readiness checks (with an honest "I'm not sure, I'd check" option) | Curiosity, process thinking |
+| Act II · Crew rounds | Coach Noor, a nervous rookie, through her first check; answer 5 crew calls by fixing, teaching, routing or promising | Peer influence, empathy, routing |
+| Act III · Anomaly (timed waves) | Triage alerts: handle, send a crew member or route to the owning station; the Flight Director orders a safety-lock override | Judgment, escalation, priorities |
+| Act IV · Final checks | Guide Hamad by radio (he sees the panel, you see the manual); then deliver, warn early or let promises slip | Empathy, curiosity, reliability |
+| Epilogue | Choose 3 actions for the next shift, write a handover note, watch the launch | Peer influence, reliability |
+| After the game | Two short questions about the candidate's real work | Real examples, business workflow knowledge |
+
+- Choices made earlier pay off later: a colleague you taught handles an alert without you; one you only fixed things for calls you again in the middle of the emergency.
+- Players can pick a reply or type their own words; their words are kept for the AI.
+- Voices (male narrator, cast of five), music and sound effects were generated with ElevenLabs and are stored in `app/static/launch/`. Captions are always on, and sound can be switched off.
+- Timed moments scale with any extra time you grant a candidate. The overall limit is in Settings (default 45 minutes).
+
+The game runs on the server: timers can't be tampered with, and every choice is saved as an event. The AI assesses the **game record** plus the two real-work answers, with every rating citing event ids (for example E23). Trust, readiness, rank and the launch ending are the **game outcome**: shown separately in the report and never part of the score. Ratings are provisional and should be calibrated in a pilot.
 
 ## Clearing data
 On each initiative's page, **Clear stored data** permanently deletes that initiative's nominee records: survey rows, CV files, AI ratings, answers, game records, links, decisions and their audit entries. Type the initiative's name to confirm. You can keep the initiative (its steps reset) or delete it too. Other initiatives are untouched.

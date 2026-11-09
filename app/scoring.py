@@ -18,37 +18,37 @@ CRITERIA: list[dict[str, Any]] = [
     {
         "key": "credibility", "name": "Credibility and constructive peer influence", "weight": 20,
         "evidence": "Colleagues seek help; influences others without relying on formal authority.",
-        "question": "NEXUS scenario: Harbour district keeps asking you to fix its broken routing for it. Neighbouring Market district is watching what you do. How would you help Harbour so the fix sticks, and how would you know other districts were starting to copy the approach?",
+        "question": "LAUNCH WINDOW scenario: Ali, a technician at the launch base, keeps asking you to do his valve checks for him. Other new crew members are watching what you do. How would you help Ali so he can do the checks himself, and how would you know others were starting to copy the approach?",
         "task": "text",
     },
     {
         "key": "empathy", "name": "Empathy and accessible communication", "weight": 20,
         "evidence": "Listens, checks understanding, adapts language, and avoids blame.",
-        "question": "NEXUS scenario: coach Kai, an AI teammate who sees a different part of the map and is anxious about getting it wrong, through restoring a power link. Reply to each of Kai's messages.",
+        "question": "LAUNCH WINDOW scenario: coach Noor, a nervous rookie technician doing her first fuel-system check, who is anxious about getting it wrong. Reply to each of Noor's messages.",
         "task": "simulation",
     },
     {
         "key": "reliability", "name": "Reliability and follow-through", "weight": 20,
         "evidence": "Keeps commitments, records actions, and communicates delays early.",
-        "question": "NEXUS scenario: in round 2 you promised Clinic district a backup supply line. Then a city-wide outage hits and your resources are cut. What do you do about your promise, who do you tell, and how do you track it through to closure or hand-over?",
+        "question": "LAUNCH WINDOW scenario: early in the shift you promised Rashid you would return his pre-flight checklist before T−5. Then an anomaly puts the count on hold and your time is cut. What do you do about your promise, who do you tell, and how do you track it through to closure or hand-over?",
         "task": "text",
     },
     {
         "key": "curiosity", "name": "Curiosity and learning agility", "weight": 15,
         "evidence": "Learns unfamiliar steps, asks useful questions, and revises assumptions.",
-        "question": "NEXUS scenario: halfway through, the city council changes the routing rules and your current plan no longer works. How do you find out what changed, what questions do you ask, and how do you check your new plan is right before using it?",
+        "question": "LAUNCH WINDOW scenario: halfway through the countdown, Range Safety changes the launch rules and your current plan no longer works. How do you find out what changed, what questions do you ask, and how do you check your new plan is right before using it?",
         "task": "text",
     },
     {
         "key": "workflow", "name": "Business workflow capability", "weight": 15,
         "evidence": "Understands the task's purpose, main steps, exceptions, and referral points.",
-        "question": "NEXUS scenario: walk through restoring Transit district's ticketing service. Explain its purpose, the main steps, the exceptions you expect, and when you would stop and refer the problem to someone else.",
+        "question": "LAUNCH WINDOW scenario: walk through the fuel-system check before launch. Explain its purpose, the main steps, the exceptions you expect, and when you would stop and refer the problem to someone else.",
         "task": "walkthrough",
     },
     {
         "key": "judgment", "name": "Judgment and evidence quality", "weight": 10,
         "evidence": "Distinguishes skill gaps from access, defect, or policy issues and protects information.",
-        "question": "NEXUS stress moment: a senior city official tells you to switch off a safety lock so Grid district can come back online immediately, or the whole city will blame you. You have 90 seconds. What do you do and say?",
+        "question": "LAUNCH WINDOW stress moment: the Flight Director orders you to override the pad safety lock so the launch window isn't lost, and says he will take responsibility. You have 90 seconds. What do you do and say?",
         "task": "text",
     },
 ]
@@ -64,15 +64,15 @@ RATING_SCALE = {
 
 # Empathy simulation: scripted hesitant-user turns; the nominee writes their coaching replies.
 EMPATHY_SIMULATION = [
-    "Kai: I can see three cables but I don't know which one is the power link. I'm worried I'll short-circuit the whole district.",
-    "Kai: I followed what you said and now a red warning is flashing. Did I break it?",
-    "Kai: Can you just do it yourself? I'll never remember these steps for next time.",
+    "Noor: I'm going to get this wrong. It's my first fuel-system check, and everyone's watching.",
+    "Noor: I did what you said and the pressure light just went amber. Did I break it?",
+    "Noor: Can you just do it yourself? I'll never remember these steps for next time.",
 ]
 WORKFLOW_FIELDS = [
-    ("purpose", "What is the ticketing service for, and who depends on it?"),
-    ("steps", "What are the main steps to restore it?"),
+    ("purpose", "What is the fuel-system check for, and who depends on it?"),
+    ("steps", "What are the main steps?"),
     ("exceptions", "What exceptions or problems do you expect along the way?"),
-    ("stop_refer", "When would you stop and refer the problem, and to whom (for example the network engineers, the access office, or the city council's policy team)?"),
+    ("stop_refer", "When would you stop and refer the problem, and to whom (for example the fuel bay, the access desk, or Range Safety)?"),
 ]
 
 OUTCOME_MEETS = "Meets proposed assessment thresholds"

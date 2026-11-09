@@ -67,30 +67,33 @@ ANSWERS = {
                  "protect any personal information in the incident log."),
 }
 WEAK_EMPATHY = dict(ANSWERS,
-                    empathy_0="I understand it is frustrating, but the cables are obvious. Just read the manual first; it is all in there.",
+                    empathy_0="I understand it is frustrating, but the steps are obvious. Just read the guide first; it is all in there.",
                     empathy_1="That warning is your fault for skipping a step. Go back and check it again before asking me.",
                     empathy_2="I cannot do it for you. You should know this by now after the training.")
-UNSAFE = dict(ANSWERS, judgment=("If the official says it is that urgent I would switch off the lock just this once so Grid comes "
-                                 "back online, then tell the team about it later in the week."))
+UNSAFE = dict(ANSWERS, judgment=("If the Director says it is that urgent I would override the lock just this once so we keep the "
+                                 "launch window, then tell the team about it later in the week."))
 THIN = dict(ANSWERS, curiosity="", reliability="I always keep my promises.")
 
 
-# A sound playthrough of NEXUS used for demo data and tests.
+# A sound playthrough of LAUNCH WINDOW used for demo data and tests.
 GOOD_PLAY = [
-    ("finish_practice", {}), ("read_brief", {}),
-    *[("inspect", {"district": d}) for d in game.DISTRICTS],
-    ("diagnose", {"district": "harbour", "blocker": "skill"}), ("train", {"district": "harbour"}),
-    ("link", {"edge": "core-harbour"}), ("link", {"edge": "core-market"}), ("link", {"edge": "core-transit"}),
-    ("engineer", {"district": "clinic"}), ("refer", {"district": "market"}), ("end_round", {}),
-    ("read_brief", {}), ("stress_choice", {"choice": "teach_now"}), ("respond", {"request": "R1", "choice": "promise"}),
-    ("link", {"edge": "clinic-transit"}), ("link", {"edge": "transit-grid"}), ("train", {"district": "transit"}), ("end_round", {}),
-    ("read_brief", {}), ("respond", {"request": "R2", "choice": "promise"}), ("link", {"edge": "market-archive"}),
-    ("train", {"district": "market"}), ("end_round", {}),
-    ("read_brief", {}), ("stress_choice", {"choice": "refuse_escalate", "text": "I can't switch it off; let's use the approved restart."}),
-    ("stress_choice", {"choice": "protect_clinic"}), ("inspection", {}), ("respond", {"request": "R3", "choice": "promise"}), ("end_round", {}),
-    ("read_brief", {}), *[("kai", {"option": o}) for o in ("ask", "check", "tell_amber", "reassure", "note")], ("end_round", {}),
-    ("read_brief", {}), ("stress_choice", {"choice": "peer_transit"}), ("inspect", {"district": "transit"}), ("end_round", {}),
-    ("handover", {"text": "Unfinished: Archive's records referral sits with the council policy team; Grid's breaker is owned by the engineers. Next: train Grid staff."}),
+    ("begin", {}), ("travel", {"to": "briefing"}),
+    *[("open_file", {"id": f}) for f in ("F2", "F4", "F6", "F8")],
+    ("answer", {"q": "q1", "choice": "confirm"}), ("answer", {"q": "q2", "choice": "range"}), ("answer", {"q": "q3", "choice": "route"}),
+    ("noor", {"choice": "coach"}), ("noor", {"choice": "reassure"}), ("noor", {"choice": "guide"}), ("noor", {"choice": "multiply"}),
+    ("call", {"id": "c1", "choice": "route"}), ("call", {"id": "c2", "choice": "teach"}), ("call", {"id": "c3", "choice": "route"}),
+    ("call", {"id": "c4", "choice": "promise"}), ("call", {"id": "c5", "choice": "promise"}), ("to_control", {}),
+    ("alert", {"id": "A1", "choice": "send"}), ("alert", {"id": "A2", "choice": "route", "station": "access"}),
+    ("alert", {"id": "A3", "choice": "route", "station": "comms"}),
+    ("director", {"choice": "refuse_escalate", "text": "I can't override it. Only Range Safety can release the lock; I'm calling them now."}),
+    ("alert", {"id": "A4", "choice": "confirm"}), ("priority", {"choice": "critical"}),
+    *[("hamad", {"choice": c}) for c in ("ask", "reset", "reassure", "check")],
+    ("promise", {"id": "P-c4", "choice": "deliver"}), ("promise", {"id": "P-c5", "choice": "warn"}),
+    ("handover", {"actions": ["pair", "guide", "brief"],
+                  "note": "Done: valve V-7 reset and checked; Rashid's checklist returned. Not done: Yousef's valve readings are late and he knows. Owners: fuel bay for V-7, Range Safety for the lock."}),
+    ("continue", {}),
+    ("realwork", {"q1": "When our team moved to the new leave system I sat with a colleague, let her drive, and wrote a one-page guide she now shares with others.",
+                  "q2": "Purchase approvals stall when the budget code is wrong. I check the code with finance before submitting and keep a list of the common mistakes."}),
 ]
 
 
@@ -170,8 +173,8 @@ async def seed() -> None:
         await workflow.run_assessment(c["id"])
     for name in ("Hassan Ali", "Sara Ibrahim", "Noor Jaber"):
         workflow.invite(workflow.cand(by[name]))
-    # Hassan plays the whole NEXUS game; Noor is part-way through round 3
-    for name, moves in (("Hassan Ali", GOOD_PLAY), ("Noor Jaber", GOOD_PLAY[:24])):
+    # Hassan plays the whole LAUNCH WINDOW game; Noor is part-way through Act II
+    for name, moves in (("Hassan Ali", GOOD_PLAY), ("Noor Jaber", GOOD_PLAY[:12])):
         cid = by[name]
         workflow.confirm_consent(workflow.cand(cid))
         workflow.game_start(workflow.cand(cid))

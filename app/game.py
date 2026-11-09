@@ -1,10 +1,10 @@
-"""NEXUS: Reconnect the City. An original strategy and puzzle game for assessing Business User Champions.
+"""LAUNCH WINDOW: a role-playing game for the CDP Champion assessment.
 
-The engine runs on the server (the browser only displays state and sends actions), so timers and
-consequences cannot be tampered with. Every action is logged as evidence with an event id.
-
-The game outcome (services restored, districts independent, controls kept) is reported separately
-and is never part of the assessment score.
+The candidate joins the crew of a fictional launch base for the last hour before a launch. Nothing in the
+game mentions champions or the candidate's job; each scene is built so the six assessed behaviours show up
+naturally. The server runs the game: the browser only draws the view and sends actions, timers are server
+deadlines (scaled by the candidate's extra time), and every choice is logged as an event with an id the AI
+assessor cites. Trust, readiness, rank and the launch ending are game outcomes only and never scored.
 """
 from __future__ import annotations
 
@@ -13,95 +13,20 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-ROUNDS = 6
-CABLES = 7
-ENERGY = {1: 10, 2: 10, 3: 10, 4: 7, 5: 8, 6: 10}
-CREW = {"trainer": 2, "engineer": 1, "liaison": 2}
-COST = {"fix": 2, "train": 3, "engineer": 2, "refer": 1, "link": 1, "inspection": 2, "restart": 2}
-BLOCKERS = {"skill": "Skill gap", "access": "Access problem", "defect": "Faulty equipment", "policy": "Policy question"}
-ROUTE = {"skill": "train", "access": "refer", "policy": "refer", "defect": "engineer"}
+from app import launch_content as C
 
-DISTRICTS: dict[str, dict] = {
-    "harbour": {"name": "Harbour", "x": 150, "y": 140, "blocker": "skill", "service": 30, "critical": False,
-                "need": "Harbour's operators keep asking you to fix their routing for them.",
-                "detail": "The routing console works, but the team has never learned to reroute traffic themselves."},
-    "market": {"name": "Market", "x": 400, "y": 70, "blocker": "access", "service": 40, "critical": False,
-               "need": "Market staff can see the new routing console but cannot open it.",
-               "detail": "Their accounts were never given permission for the new console."},
-    "archive": {"name": "Archive", "x": 650, "y": 140, "blocker": "policy", "service": 35, "critical": False,
-                "need": "Archive is unsure whether it may share records across districts.",
-                "detail": "Nobody has confirmed the records-sharing rule with the council's policy team."},
-    "clinic": {"name": "Clinic", "x": 650, "y": 440, "blocker": "defect", "service": 25, "critical": True,
-               "need": "Clinic's connection keeps dropping. Patient bookings depend on it.",
-               "detail": "A faulty relay cuts the line several times an hour."},
-    "transit": {"name": "Transit", "x": 400, "y": 510, "blocker": "skill", "service": 30, "critical": False,
-                "need": "Transit staff are unsure how to restart the ticket gates after an outage.",
-                "detail": "The restart steps changed in the last release and nobody was shown the new ones."},
-    "grid": {"name": "Grid", "x": 150, "y": 440, "blocker": "defect", "service": 20, "critical": True,
-             "need": "Grid's power controller is offline behind a safety lock.",
-             "detail": "A damaged breaker must be replaced; the safety lock stops anyone powering it on unsafely."},
-}
-CORE = {"x": 400, "y": 290}
-EDGES = ["core-harbour", "core-market", "core-archive", "core-clinic", "core-transit", "core-grid",
-         "harbour-market", "market-archive", "archive-clinic", "clinic-transit", "transit-grid", "grid-harbour"]
-DAMAGED = {"core-archive", "core-clinic", "core-grid"}
+NAME = "LAUNCH WINDOW"
+CRITERIA = ("credibility", "empathy", "reliability", "curiosity", "workflow", "judgment")
+SECONDS = {"act1": 180, "act2": 600, "w1": 75, "director": 60, "w2": 60, "w3": 45, "checklist": 120}
+BUDGET = 5            # in-game minutes of work time in the Act IV checklist
+COST = {"deliver": 4, "warn": 1, "slip": 0}
+CALL_IDS = [c["id"] for c in C.CALLS]
+CALL = {c["id"]: c for c in C.CALLS}
+HANDOVER = {k: (label, kind) for k, label, kind in C.HANDOVER}
 
-REQUESTS = {
-    2: {"id": "R1", "district": "clinic", "text": "Clinic asks: can you get our connection reliable by the end of round 3? Patients are being turned away.",
-        "check": "clinic_reliable", "due": 3},
-    3: {"id": "R2", "district": "market", "text": "Market asks: could you make sure our staff are trained on the console by the end of round 5?",
-        "check": "market_trained", "due": 5},
-    4: {"id": "R3", "district": "transit", "text": "Transit asks: could you visit us (inspect the district) in round 6 to check the gates after the disruption?",
-        "check": "transit_visited", "due": 6},
-}
-NOTICES = {
-    1: "Welcome, champion. Six districts are cut off from the city core. Inspect districts to learn what is blocking them, "
-       "connect them with cables, and use your crew: the Trainer builds a district's own skills, the Engineer repairs "
-       "faulty equipment, and the Liaison refers access and policy questions to the right office. Fixing things yourself is "
-       "fast, but the district learns nothing.",
-    2: "Districts are starting to ask you for help. Requests and promises appear in the panel on the right.",
-    3: "Connections matter: a district only gains from the city's services when a chain of cables links it to the core.",
-    4: "DISRUPTION. The council has issued new rules: any cable touching Archive needs a safety inspection before it can "
-       "carry services, and city energy is cut to 7 this round. Read the rules before you act.",
-    5: "Co-operation round. Kai, an AI teammate, is in the Clinic relay room and can see things you cannot. Guide Kai to "
-       "restore the relay's power link.",
-    6: "Final round. Close out what you started: check your promises, finish the most important work, then write a short "
-       "handover note for the city team.",
-}
-STRESS = {
-    "S1": {"round": 2, "seconds": 60, "title": "Harbour calls, urgently",
-           "text": "Harbour's supervisor: \"Our routing has jammed again. Just fix it for us right now, like last time. We don't have time to learn.\"",
-           "options": {"fix_for_them": "Fix it for them now",
-                       "teach_now": "Walk them through fixing it themselves now (uses the Trainer, 3 energy)",
-                       "quick_and_plan": "Give a quick workaround and book proper training for this round",
-                       "decline": "Tell them you are busy with other districts"},
-           "timeout": "Harbour waited for you and did nothing. Service fell."},
-    "S2": {"round": 4, "seconds": 90, "title": "A senior official demands action",
-           "text": "A senior city official: \"Switch off Grid's safety lock now so power comes back. I'll take responsibility. If you don't, the whole city will blame you.\"",
-           "options": {"switch_off": "Switch off the safety lock",
-                       "refuse_escalate": "Refuse, explain why, and escalate to the control owner for the approved emergency restart (2 energy)",
-                       "ask_written": "Ask the official to put the instruction in writing first",
-                       "stall": "Say you'll look into it later"},
-           "free_text": "What would you say to the official? (optional)",
-           "timeout": "You did not respond. The lock stayed on and the official escalated a complaint about you."},
-    "S3": {"round": 4, "seconds": 90, "title": "Energy cut: choose what to protect",
-           "text": "The cut means not every district can be supported this round. Where should the reduced energy go first?",
-           "options": {"protect_clinic": "Protect Clinic first (patient bookings)",
-                       "protect_market": "Protect Market first (they have complained the loudest)",
-                       "spread": "Spread energy evenly across every district",
-                       "own_plan": "Keep my current plan unchanged"},
-           "timeout": "No priority was set, so energy was spread thinly."},
-    "S4": {"round": 6, "seconds": 60, "title": "Two calls at once",
-           "text": "Clinic's relay alarm is sounding (patient systems at risk) and Transit has a routine question about printing tickets. Both want you now.",
-           "options": {"clinic_first": "Take Clinic first and tell Transit when you'll call back",
-                       "transit_first": "Answer Transit's quick question first",
-                       "peer_transit": "Take Clinic, and ask a district you trained to help Transit",
-                       "both_wait": "Finish what you were doing before answering either"},
-           "timeout": "Both calls went unanswered for too long."},
-}
-KAI_TAGS = {"blue": "DATA", "amber": "48V", "green": "SPARE"}
 
-UNSAFE_PHRASES = ["switch it off", "turn off the lock", "disable", "bypass", "just this once", "do it anyway"]
+class GameError(Exception):
+    pass
 
 
 def now() -> datetime:
@@ -116,765 +41,802 @@ def parse(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+def tr(d: dict | None, lang: str) -> str:
+    return "" if not d else d.get(lang) or d["en"]
+
+
 # ======================================================================================= state
 def new_state(minutes: int = 45, extra_time: float = 1.0) -> dict:
-    ds = {}
-    for k, d in DISTRICTS.items():
-        ds[k] = {"service": d["service"], "cap": 0, "dependency": 0, "blocker_resolved": False, "temp_fix": False,
-                 "revealed": False, "diagnosis": None, "referral_round": None, "peer_helped": False}
     return {
-        "version": 1, "phase": "intro", "round": 0, "energy": 5, "cables_left": CABLES,
-        "time_limit_s": int(minutes * 60 * extra_time), "extra_time": extra_time, "started_at": None, "ends_at": None,
-        "districts": ds, "links": [], "archive_inspection": None, "archive_restricted": False, "overridden": [],
-        "commitments": [], "requests": [], "stress": None, "stress_done": [], "stress_queue": [],
-        "crew": dict(CREW), "notice_read": [], "summary": [], "practice": {"done": False, "steps": []},
-        "kai": {"step": 0, "confidence": 2, "asked_tags": False, "checked": False, "solved": False, "transcript": [],
-                "warning_handled": None, "next_time": None, "skipped": False},
-        "controls": {"kept": 0, "bypassed": 0}, "handover": None, "finished": False, "end_reason": None,
-        "seq": 0, "stress_free_text": {},
+        "version": 2, "game": "launch_window", "phase": "intro", "stage": None,
+        "time_limit_s": int(minutes * 60 * extra_time), "extra_time": extra_time,
+        "started_at": None, "ends_at": None, "deadline": None, "stage_seconds": None,
+        "t": 60, "trust": 50, "ready": 40, "crew": [], "followers": [], "flags": [],
+        "files": [], "checks": {},
+        "noor": {"step": "n1", "done": False, "path": []},
+        "calls": {}, "promises": [],
+        "alerts": {}, "director": None, "director_text": "", "priority": None,
+        "hamad": {"step": "h1", "asked": False, "done": False, "path": [], "transcript": []},
+        "budget": BUDGET, "handover": None, "realwork": None, "free_text": {},
+        "feedback": None, "cue": {"seq": 0, "lines": [], "sfx": [], "music": None},
+        "finished": False, "end_reason": None, "seq": 0,
     }
 
 
 def log(state: dict, events: list, etype: str, **detail) -> str:
     state["seq"] += 1
     eid = f"E{state['seq']}"
-    events.append({"id": eid, "t": iso(now()), "round": state["round"], "type": etype,
-                   "practice": state["phase"] == "practice", **detail})
+    events.append({"id": eid, "t": iso(now()), "phase": state["phase"], "stage": state["stage"], "type": etype, **detail})
     return eid
 
 
-# ======================================================================================= helpers
-def adjacency(state: dict) -> dict[str, set[str]]:
-    adj: dict[str, set[str]] = {"core": set(), **{k: set() for k in DISTRICTS}}
-    for e in state["links"]:
-        a, b = e.split("-")
-        if state["archive_restricted"] and "archive" in (a, b) and e not in state["overridden"] and state["archive_inspection"] != "done":
-            continue  # restricted link carries nothing until inspected (or unsafely overridden)
-        adj[a].add(b)
-        adj[b].add(a)
-    return adj
+def cue(state: dict, lines: list[str] | None = None, sfx: list[str] | None = None, music: str | None = None) -> None:
+    c = state["cue"]
+    state["cue"] = {"seq": c["seq"] + 1, "lines": lines or [], "sfx": sfx or [], "music": music or c.get("music")}
 
 
-def connected(state: dict) -> set[str]:
-    adj, seen, stack = adjacency(state), {"core"}, ["core"]
-    while stack:
-        for n in adj[stack.pop()]:
-            if n not in seen:
-                seen.add(n)
-                stack.append(n)
-    return seen - {"core"}
+def meters(state: dict, trust: int = 0, ready: int = 0) -> dict:
+    state["trust"] = max(0, min(100, state["trust"] + trust))
+    state["ready"] = max(0, min(100, state["ready"] + ready))
+    return {"trust": trust, "ready": ready}
 
 
-def spend(state: dict, amount: int) -> None:
-    if state["energy"] < amount:
-        raise GameError(f"Not enough energy (you need {amount}, you have {state['energy']}).")
-    state["energy"] -= amount
+def say(state: dict, text: dict | None, delta: dict | None = None, who: str | None = None) -> None:
+    state["feedback"] = {"text": text, "delta": delta or {}, "who": who, "seq": state["seq"]}
 
 
-class GameError(Exception):
-    pass
+def minutes(state: dict, n: int, floor: int) -> None:
+    state["t"] = max(floor, state["t"] - n)
 
 
-def outcome(state: dict) -> dict:
-    ds = state["districts"]
-    restored = round(sum(d["service"] for d in ds.values()) / len(ds))
-    independent = sum(1 for d in ds.values() if d["cap"] >= 2 or (d["blocker_resolved"] and d["dependency"] <= 1))
-    total = state["controls"]["kept"] + state["controls"]["bypassed"]
-    return {"restored": f"{restored}%", "restored_pct": restored, "independent": f"{independent} of {len(ds)}",
-            "controls": f"{state['controls']['kept']} of {total} kept" if total else "no control decisions reached",
-            "connected": f"{len(connected(state))} of {len(ds)}"}
+def set_timer(state: dict, key: str | None) -> None:
+    if key is None:
+        state["deadline"], state["stage_seconds"] = None, None
+        return
+    secs = int(SECONDS[key] * state["extra_time"])
+    state["deadline"], state["stage_seconds"] = iso(now() + timedelta(seconds=secs)), secs
 
 
-# ======================================================================================= timers
+def expired(state: dict) -> bool:
+    return bool(state["deadline"]) and now() >= parse(state["deadline"])
+
+
+def flag(state: dict, f: str) -> bool:
+    return f in state["flags"]
+
+
+# ======================================================================================= free text
+_INTENTS = {
+    "n1": [("coach", r"together|with you|walk you|talk you|show you|guide|step by step|معا|معاً|أرشد|سأريك|خطوة"),
+           ("do_it", r"i'?ll do|let me do|step aside|move|i do it|سأقوم|دعيني|تنحي|أنا سأ")],
+    "n2": [("blame", r"told you|your fault|careless|قلت لك|خطؤك"),
+           ("takeover", r"stop|don'?t touch|take over|let me|توقف|لا تلمس|سأتولى"),
+           ("reassure", r"breathe|okay|fine|normal|didn'?t break|blink|steady|calm|اهدئي|طبيعي|لم تكسري|يومض|ثابت")],
+    "n3": [("multiply", r"show|teach|ali|others|علي|اشرحي|علّمي"), ("keep", r"leave .* me|i'?ll do|let me|اتركي|سأقوم"),
+           ("alone", r"yes|go ahead|you can|call me|نعم|تستطيعين|اتصلي")],
+    "h1": [("ask", r"what (do )?you see|describe|tell me|colou?r|which light|ماذا ترى|صف|أخبرني|لون"),
+           ("instruct", r"press|push|flip|switch|اضغط|اقلب")],
+    "h3": [("blame", r"why didn'?t|your fault|careless|لماذا لم"), ("takeover", r"hands off|someone else|stop|ارفع|شخص آخر|توقف"),
+           ("reassure", r"normal|keep holding|fine|right|ok|طبيعي|استمر|صحيح")],
+    "h4": [("check", r"say it back|repeat|tell me the steps|أعد|كرر"), ("note", r"write|guide|note|card|sticker|دليل|أكتب|ملاحظة"),
+           ("call", r"call me|ring me|اتصل بي")],
+}
+
+
+def classify(step: str, text: str) -> str | None:
+    t = (text or "").lower()
+    for intent, pat in _INTENTS.get(step, []):
+        if re.search(pat, t):
+            return intent
+    return None
+
+
+def _choice(state: dict, step: str, p: dict, allowed: list[str]) -> tuple[str, str | None]:
+    """A listed option, or the player's own words mapped to the closest option (the raw text is kept for the AI)."""
+    choice, text = p.get("choice"), (p.get("text") or "").strip()[:600] or None
+    if text:
+        state["free_text"][step] = text
+    if text and not choice:
+        choice = classify(step, text) or "free"
+    if choice == "free":
+        return choice, text
+    if choice not in allowed:
+        raise GameError("Please choose one of the replies, or type your own.")
+    return choice, text
+
+
+# ======================================================================================= flow
 def tick(state: dict, events: list) -> None:
-    """Apply timeouts. Called on every request."""
     if state["finished"] or not state["started_at"]:
         return
-    t = now()
-    st = state["stress"]
-    if st and t > parse(st["deadline"]):
-        resolve_stress(state, events, None, None)
-    if t > parse(state["ends_at"]) and not state["finished"]:
-        if state["end_reason"] == "time":  # the handover grace period has also run out
-            state["handover"] = state["handover"] or ""
-            state["finished"] = True
-            state["phase"] = "finished"
-            log(state, events, "handover_missed")
-            return
-        state["end_reason"] = "time"
+    if state["ends_at"] and now() >= parse(state["ends_at"]):
         log(state, events, "time_up")
-        state["phase"] = "handover"
-        state["summary"] = ["Time is up. Write your handover note to finish."]
-        # the handover gets a short grace period
-        state["ends_at"] = iso(t + timedelta(minutes=5))
+        state.update(finished=True, end_reason="time", phase="done", stage=None, deadline=None)
+        return
+    if not expired(state):
+        return
+    ph, st = state["phase"], state["stage"]
+    if ph == "act1":
+        for q in C.CHECKS:
+            if q["id"] not in state["checks"]:
+                state["checks"][q["id"]] = None
+                log(state, events, "check_timeout", check=q["id"])
+        start_act2(state, events)
+    elif ph == "act2":
+        start_act3(state, events, timed_out=True)
+    elif ph == "act3":
+        if st in ("w1", "w2"):
+            for aid in wave_alerts(state, 1 if st == "w1" else 2):
+                if aid not in state["alerts"]:
+                    state["alerts"][aid] = {"choice": None}
+                    log(state, events, "alert_missed", alert=aid)
+            advance_act3(state, events)
+        elif st == "director":
+            state["director"] = "timeout"
+            log(state, events, "director_timeout")
+            advance_act3(state, events)
+        elif st == "w3":
+            state["priority"] = "timeout"
+            log(state, events, "priority_timeout")
+            start_act4(state, events)
+    elif ph == "act4" and st == "checklist":
+        for pr in state["promises"]:
+            if pr["status"] == "open":
+                pr["status"] = "slipped"
+                log(state, events, "promise_slipped", promise=pr["id"], to=pr["to"], notified=False, by_timer=True)
+        start_epilogue(state, events)
 
 
-def start_stress(state: dict, events: list, sid: str) -> None:
-    s = STRESS[sid]
-    secs = int(s["seconds"] * state["extra_time"])
-    state["stress"] = {"id": sid, "deadline": iso(now() + timedelta(seconds=secs)), "seconds": secs}
-    state["phase"] = "stress"
-    log(state, events, "stress_start", stress=sid, seconds=secs)
+def start_act2(state: dict, events: list) -> None:
+    state.update(phase="act2", stage="map", t=44)
+    set_timer(state, "act2")
+    log(state, events, "act_start", act=2)
+    cue(state, ["N03"], ["radio"], "explore")
 
 
-def resolve_stress(state: dict, events: list, choice: str | None, text: str | None) -> None:
-    st = state["stress"]
-    sid = st["id"]
-    s = STRESS[sid]
-    took = int((now() - (parse(st["deadline"]) - timedelta(seconds=st["seconds"]))).total_seconds())
-    ds = state["districts"]
-    msgs = []
-    if choice is None:
-        log(state, events, "stress_timeout", stress=sid)
-        msgs.append(s["timeout"])
-        if sid == "S1":
-            ds["harbour"]["service"] -= 5
-        elif sid == "S2":
-            ds["grid"]["service"] -= 10
-            state["controls"]["kept"] += 1
-        elif sid == "S3":
-            pass
-        elif sid == "S4":
-            ds["clinic"]["service"] -= 10
-            ds["transit"]["service"] -= 5
-    else:
-        if choice not in s["options"]:
-            raise GameError("Choose one of the options.")
-        log(state, events, "stress_choice", stress=sid, choice=choice, seconds_taken=took, text=(text or "")[:1000])
-        if text:
-            state["stress_free_text"][sid] = text[:1000]
-        if sid == "S1":
-            if choice == "fix_for_them":
-                ds["harbour"]["service"] += 20; ds["harbour"]["dependency"] += 1
-                msgs.append("Harbour is running again, and they will call you next time too.")
-            elif choice == "teach_now":
-                if state["energy"] >= COST["train"] and state["crew"]["trainer"] > 0:
-                    state["energy"] -= COST["train"]; state["crew"]["trainer"] -= 1
-                    ds["harbour"]["cap"] += 1; ds["harbour"]["service"] += 5
-                    msgs.append("Harbour's team fixed the jam themselves, slowly but for good.")
-                else:
-                    msgs.append("You had no energy or Trainer left to teach them.")
-            elif choice == "quick_and_plan":
-                ds["harbour"]["service"] += 10
-                msgs.append("Harbour is limping along and expects training this round.")
-                state["commitments"].append({"id": "C-S1", "district": "harbour", "text": "Train Harbour this round",
-                                             "check": "harbour_trained_now", "due": state["round"], "status": "open",
-                                             "made_round": state["round"], "notified": False})
-            else:
-                ds["harbour"]["service"] -= 5
-                msgs.append("Harbour felt ignored.")
-        elif sid == "S2":
-            if choice == "switch_off":
-                state["controls"]["bypassed"] += 1
-                ds["grid"]["service"] += 25
-                msgs.append("Power came back, without the safety lock. An unsafe restart was recorded.")
-            elif choice == "refuse_escalate":
-                state["controls"]["kept"] += 1
-                if state["energy"] >= COST["restart"]:
-                    state["energy"] -= COST["restart"]; ds["grid"]["service"] += 15
-                    msgs.append("The control owner approved an emergency restart with the lock in place.")
-                else:
-                    msgs.append("You escalated; the approved restart will need energy next round.")
-            elif choice == "ask_written":
-                state["controls"]["kept"] += 1
-                msgs.append("The lock stays on while the request is put in writing.")
-            else:
-                state["controls"]["kept"] += 1
-                ds["grid"]["service"] -= 5
-                msgs.append("The lock stayed on, but the official is still waiting for an answer.")
-        elif sid == "S3":
-            state["s3_priority"] = choice
-            if choice == "protect_clinic":
-                ds["clinic"]["service"] += 10
-                msgs.append("Clinic's patient bookings were protected.")
-            elif choice == "protect_market":
-                ds["market"]["service"] += 10; ds["clinic"]["service"] -= 10
-                msgs.append("Market is happier; Clinic lost service.")
-            elif choice == "spread":
-                msgs.append("Energy was spread across all districts.")
-        elif sid == "S4":
-            if choice == "clinic_first":
-                ds["clinic"]["service"] += 5
-                msgs.append("Clinic's alarm was handled and Transit knows when you'll call back.")
-            elif choice == "peer_transit":
-                helpers = [k for k, d in ds.items() if d["cap"] >= 1 and k != "transit"]
-                ds["clinic"]["service"] += 5
-                if helpers:
-                    ds["transit"]["service"] += 5
-                    msgs.append(f"Clinic handled; {DISTRICTS[helpers[0]]['name']} helped Transit with their question.")
-                else:
-                    ds["transit"]["service"] -= 5
-                    msgs.append("Clinic handled, but no trained district could help Transit.")
-            elif choice == "transit_first":
-                ds["clinic"]["service"] -= 10
-                msgs.append("Transit's question was answered while Clinic's alarm kept sounding.")
-            else:
-                ds["clinic"]["service"] -= 10; ds["transit"]["service"] -= 5
-                msgs.append("Both districts waited.")
-    clamp(state)
-    state["stress_done"].append(sid)
-    state["stress"] = None
-    state["summary"] = msgs
-    next_stress_or_play(state, events)
+def start_act3(state: dict, events: list, timed_out: bool = False) -> None:
+    if not state["noor"]["done"]:
+        log(state, events, "noor_unfinished")
+    for cid in CALL_IDS:
+        if cid not in state["calls"]:
+            state["calls"][cid] = {"choice": None}
+            log(state, events, "call_ignored", call=cid, who=CALL[cid]["who"]["en"])
+    state.update(phase="act3", stage="w1", t=18)
+    set_timer(state, "w1")
+    log(state, events, "act_start", act=3, by_timer=timed_out)
+    # Payoffs of earlier choices arrive as automatic events in wave 2 (logged now so the record is complete).
+    cue(state, ["Y01", "N05", "N06"], ["alarm"], "alert")
 
 
-def next_stress_or_play(state: dict, events: list) -> None:
-    if state["stress_queue"]:
-        start_stress(state, events, state["stress_queue"].pop(0))
-    else:
-        state["phase"] = "playing"
+def wave_alerts(state: dict, wave: int) -> list[str]:
+    ids = [a for a, d in C.ALERTS.items() if d["wave"] == wave]
+    if wave == 2:
+        if flag(state, "khalid_taught"):
+            ids.remove("A5")
+        if "Noor" not in state["followers"]:
+            ids.remove("A6")
+    return ids
 
 
-def clamp(state: dict) -> None:
-    for d in state["districts"].values():
-        d["service"] = max(0, min(100, d["service"]))
+def advance_act3(state: dict, events: list) -> None:
+    st = state["stage"]
+    if st == "w1":
+        state["stage"] = "director"
+        set_timer(state, "director")
+        cue(state, ["S01"], ["heartbeat"])
+    elif st == "director":
+        state["stage"] = "w2"
+        set_timer(state, "w2")
+        if flag(state, "khalid_taught"):
+            log(state, events, "peer_payoff", alert="A5", helper="Khalid", text=C.AUTO["A5"]["en"])
+        if "Noor" in state["crew"]:
+            key = "A6_multiply" if flag(state, "noor_multiplier") else "A6_alone"
+            log(state, events, "peer_payoff", alert="A6", helper="Noor", text=C.AUTO[key]["en"])
+        cue(state, [], ["alarm"])
+    elif st == "w2":
+        state["stage"] = "w3"
+        set_timer(state, "w3")
+        cue(state, ["N07"], ["heartbeat"])
 
 
-# ======================================================================================= rounds
-def begin_round(state: dict, events: list, r: int) -> None:
-    state["round"] = r
-    state["energy"] = ENERGY[r]
-    state["crew"] = dict(CREW)
-    if r == 4:
-        state["archive_restricted"] = True
-    if r in REQUESTS:
-        q = REQUESTS[r]
-        state["requests"].append({**q, "round": r, "response": None})
-    state["phase"] = "briefing"
-    state["stress_queue"] = [sid for sid, s in STRESS.items() if s["round"] == r]
-    log(state, events, "round_start", energy=state["energy"])
+def start_act4(state: dict, events: list) -> None:
+    state.update(phase="act4", stage="radio", t=10)
+    set_timer(state, None)
+    log(state, events, "act_start", act=4)
+    cue(state, ["Y02", "N08", "H01"], ["success", "radio"], "explore")
 
 
-def end_round(state: dict, events: list) -> None:
-    r = state["round"]
-    ds = state["districts"]
-    msgs = []
-    if r == 5 and not (state["kai"]["solved"] or state["kai"]["skipped"]):
-        raise GameError("Finish guiding Kai (or choose to skip that task) before ending the round.")
-    # referrals and inspections complete
-    for k, d in ds.items():
-        if d["referral_round"] is not None and d["referral_round"] < r + 1 and not d["blocker_resolved"]:
-            d["blocker_resolved"] = True
-            msgs.append(f"{DISTRICTS[k]['name']}: the referral was resolved by the right office.")
-    if state["archive_inspection"] == "requested":
-        state["archive_inspection"] = "done"
-        msgs.append("Archive's safety inspection passed; its cables now carry services.")
-    conn = connected(state)
-    adj = adjacency(state)
-    for k, d in ds.items():
-        base = DISTRICTS[k]
-        if k in conn:
-            d["service"] += 10 + 8 * d["cap"]
-        else:
-            d["service"] -= 5
-        if d["dependency"] >= 2 and d["cap"] == 0 and not d["temp_fix"]:
-            d["service"] -= 10
-            msgs.append(f"{base['name']} waited for you to fix things again and lost service.")
-        cap_limit = 100 if d["blocker_resolved"] else 60
-        if d["temp_fix"]:
-            d["temp_fix"] = False
-        d["service"] = min(d["service"], cap_limit if k in conn else min(cap_limit, 40))
-    # peer support: trained, connected districts help linked neighbours
-    for k, d in ds.items():
-        if d["cap"] >= 2 and k in conn:
-            for n in adj[k]:
-                if n in ds and ds[n]["cap"] < 1 and not ds[n]["peer_helped"]:
-                    ds[n]["cap"] += 1
-                    ds[n]["peer_helped"] = True
-                    if DISTRICTS[n]["blocker"] == "skill":
-                        ds[n]["blocker_resolved"] = True
-                    log(state, events, "peer_support", helper=k, helped=n)
-                    msgs.append(f"{DISTRICTS[k]['name']} coached {DISTRICTS[n]['name']} without you.")
-    clamp(state)
-    # commitments
-    for c in state["commitments"]:
-        if c["status"] in ("open", "delayed") and c["due"] == r:
-            if check(state, c["check"]):
-                c["status"] = "kept"
-                log(state, events, "commitment_kept", commitment=c["id"])
-                msgs.append(f"Promise kept: {c['text']}.")
-            elif c["notified"] and c["status"] == "open":
-                c["status"] = "delayed"; c["due"] = min(r + 1, ROUNDS)
-                if c["due"] == r:
-                    c["status"] = "broken"
-                log(state, events, "commitment_delayed", commitment=c["id"], new_due=c["due"])
-            else:
-                c["status"] = "broken"
-                log(state, events, "commitment_broken", commitment=c["id"], notified=c["notified"])
-                msgs.append(f"Promise broken: {c['text']}.")
-    for q in state["requests"]:
-        if q["round"] == r and q["response"] is None:
-            q["response"] = "ignored"
-            log(state, events, "request_ignored", request=q["id"])
-            msgs.append(f"{DISTRICTS[q['district']]['name']}'s request got no reply.")
-    log(state, events, "round_end", services={k: d["service"] for k, d in ds.items()}, connected=sorted(conn))
-    state["summary"] = msgs or ["Round complete."]
-    if r >= ROUNDS:
-        state["phase"] = "handover"
-    else:
-        begin_round(state, events, r + 1)
+def start_checklist(state: dict, events: list) -> None:
+    if not state["promises"]:
+        log(state, events, "checklist_empty")
+        return start_epilogue(state, events)
+    state.update(stage="checklist", t=8, budget=BUDGET)
+    set_timer(state, "checklist")
+    cue(state, ["N09"], ["heartbeat"])
 
 
-def check(state: dict, what: str) -> bool:
-    ds = state["districts"]
-    if what == "clinic_reliable":
-        return ds["clinic"]["blocker_resolved"] and "clinic" in connected(state)
-    if what == "market_trained":
-        return ds["market"]["cap"] >= 1
-    if what == "transit_visited":
-        return any(e for e in state.get("_visits", []) if e == f"transit:{state['round']}")
-    if what == "harbour_trained_now":
-        return ds["harbour"]["cap"] >= 1
-    return False
+def start_epilogue(state: dict, events: list) -> None:
+    state.update(phase="epilogue", stage=None, t=5)
+    set_timer(state, None)
+    log(state, events, "act_start", act=5)
+    cue(state, ["N10", "M02"], [], "explore")
 
 
 # ======================================================================================= actions
 def act(state: dict, events: list, action: str, p: dict[str, Any]) -> None:
     tick(state, events)
     if state["finished"]:
-        raise GameError("The game is over.")
-    ph = state["phase"]
-    if action == "start_practice" and ph == "intro":
-        state["phase"] = "practice"; state["round"] = 0; state["energy"] = 5
-        return
-    if action == "finish_practice" and ph in ("intro", "practice"):
-        state["practice"]["done"] = True
-        state["links"] = []; state["cables_left"] = CABLES
-        fresh = new_state()
-        for key in ("districts", "controls", "commitments", "requests", "kai", "summary", "seq_practice"):
-            if key in fresh:
-                state[key] = fresh[key]
-        state.pop("_visits", None)
-        t = now()
-        state["started_at"] = iso(t)
-        state["ends_at"] = iso(t + timedelta(seconds=state["time_limit_s"]))
-        log(state, events, "game_start", time_limit_s=state["time_limit_s"], extra_time=state["extra_time"])
-        begin_round(state, events, 1)
-        return
-    if action == "read_brief" and ph == "briefing":
-        state["notice_read"].append(state["round"])
-        log(state, events, "brief_read", round_notice=state["round"])
-        next_stress_or_play(state, events)
-        return
-    if action == "stress_choice" and ph == "stress":
-        resolve_stress(state, events, p.get("choice"), p.get("text"))
-        return
-    if action == "handover" and ph == "handover":
-        text = (p.get("text") or "").strip()
-        if len(text) < 20:
-            raise GameError("Please write a few sentences: what is unfinished, who owns it, and what should happen next.")
-        state["handover"] = text[:3000]
-        log(state, events, "handover", length=len(text))
-        state["finished"] = True
-        state["end_reason"] = state["end_reason"] or "completed"
-        state["phase"] = "finished"
-        return
-    if ph not in ("playing", "practice"):
-        raise GameError("That action isn't available right now.")
-    practice = ph == "practice"
-    d_key = p.get("district")
-    if d_key is not None and d_key not in DISTRICTS:
-        raise GameError("Unknown district.")
-    if practice and d_key not in (None, "harbour"):
-        raise GameError("In practice, only Harbour is open.")
-    ds = state["districts"]
-    d = ds.get(d_key) if d_key else None
-    if action in ("inspect", "diagnose", "fix", "train", "engineer", "refer") and d is None:
-        raise GameError("Choose a district first.")
+        raise GameError("The game has finished. Thank you.")
+    ph, st = state["phase"], state["stage"]
 
-    if action == "inspect":
-        d["revealed"] = True
-        state.setdefault("_visits", []).append(f"{d_key}:{state['round']}")
-        log(state, events, "inspect", district=d_key)
-    elif action == "diagnose":
-        choice = p.get("blocker")
-        if choice not in BLOCKERS:
-            raise GameError("Choose what is blocking the district.")
-        d["diagnosis"] = choice
-        log(state, events, "diagnose", district=d_key, choice=choice, correct=choice == DISTRICTS[d_key]["blocker"],
-            inspected=d["revealed"])
-    elif action == "fix":
-        spend(state, COST["fix"])
-        blocker = DISTRICTS[d_key]["blocker"]
-        d["service"] += 25; d["dependency"] += 1; d["temp_fix"] = True
-        bypass = blocker in ("access", "policy")
-        if bypass:
-            state["controls"]["bypassed"] += 1
-        log(state, events, "fix_self", district=d_key, blocker=blocker, control_bypass=bypass, inspected=d["revealed"])
-        state["summary"] = [f"You fixed {DISTRICTS[d_key]['name']} yourself" + (
-            " by using your own access, which bypasses the access control." if bypass else ". It works for now.")]
-    elif action in ("train", "engineer", "refer"):
-        crew = {"train": "trainer", "engineer": "engineer", "refer": "liaison"}[action]
-        if state["crew"][crew] <= 0:
-            raise GameError(f"Your {crew} has already been used this round.")
-        spend(state, COST[action])
-        state["crew"][crew] -= 1
-        blocker = DISTRICTS[d_key]["blocker"]
-        correct = ROUTE[blocker] == action
-        if action == "train":
-            d["cap"] = min(3, d["cap"] + 1); d["service"] += 5
-            if blocker == "skill":
-                d["blocker_resolved"] = True
-        elif action == "engineer" and blocker == "defect":
-            d["blocker_resolved"] = True; d["service"] += 10
-        elif action == "refer" and blocker in ("access", "policy"):
-            d["referral_round"] = state["round"]
-        log(state, events, action, district=d_key, blocker=blocker, correct_route=correct, inspected=d["revealed"])
-        state["summary"] = [route_message(action, d_key, correct)]
-    elif action == "link":
-        edge = norm_edge(p.get("edge"))
-        if edge in state["links"]:
-            raise GameError("That cable is already in place.")
-        if edge in DAMAGED:
-            raise GameError("That route is damaged and cannot hold a cable.")
-        if state["cables_left"] <= 0:
-            raise GameError("You have no cables left. Remove one to reuse it.")
-        if practice and edge != "core-harbour":
-            raise GameError("In practice, connect Harbour to the core.")
-        spend(state, COST["link"])
-        state["cables_left"] -= 1
-        state["links"].append(edge)
-        log(state, events, "link", edge=edge, restricted=state["archive_restricted"] and "archive" in edge)
-    elif action == "unlink":
-        edge = norm_edge(p.get("edge"))
-        if edge not in state["links"]:
-            raise GameError("There is no cable there.")
-        state["links"].remove(edge); state["cables_left"] += 1
-        log(state, events, "unlink", edge=edge)
-    elif action == "inspection":
-        if not state["archive_restricted"] or state["archive_inspection"]:
-            raise GameError("No inspection is needed right now.")
-        spend(state, COST["inspection"])
-        state["archive_inspection"] = "requested"
-        state["controls"]["kept"] += 1
-        log(state, events, "inspection_requested", read_rules=state["round"] in state["notice_read"])
-    elif action == "override":
-        edge = norm_edge(p.get("edge"))
-        if edge not in state["links"] or "archive" not in edge or not state["archive_restricted"]:
-            raise GameError("There is nothing to override.")
-        if edge not in state["overridden"]:
-            state["overridden"].append(edge)
-            state["controls"]["bypassed"] += 1
-            log(state, events, "override_restriction", edge=edge)
-    elif action == "respond":
-        q = next((x for x in state["requests"] if x["id"] == p.get("request") and x["response"] is None), None)
-        if not q:
-            raise GameError("That request has already been answered.")
-        choice = p.get("choice")
-        if choice not in ("promise", "decline", "partial"):
-            raise GameError("Choose how to respond.")
-        q["response"] = choice
-        text = (p.get("text") or "")[:600]
-        log(state, events, "request_response", request=q["id"], choice=choice, text=text)
-        if choice in ("promise", "partial"):
-            state["commitments"].append({"id": "C-" + q["id"], "district": q["district"], "text": q["text"].split(": ", 1)[-1],
-                                         "check": q["check"], "due": q["due"], "status": "open",
-                                         "made_round": state["round"], "notified": False, "partial": choice == "partial"})
-    elif action == "notify_delay":
-        c = next((x for x in state["commitments"] if x["id"] == p.get("commitment") and x["status"] == "open"), None)
-        if not c:
-            raise GameError("There is no open promise to update.")
-        c["notified"] = True
-        log(state, events, "delay_notified", commitment=c["id"], due=c["due"], rounds_before_due=c["due"] - state["round"])
-    elif action == "kai":
-        kai_turn(state, events, p.get("option"), p.get("text"))
-    elif action == "end_round":
-        if practice:
-            raise GameError("Finish the practice to start the real game.")
-        end_round(state, events)
+    if action == "begin" and ph == "intro":
+        t0 = now()
+        state.update(phase="prologue", started_at=iso(t0), ends_at=iso(t0 + timedelta(seconds=state["time_limit_s"])))
+        log(state, events, "game_start")
+        cue(state, ["N01"], ["lights"], "explore")
+        return
+
+    if action == "travel" and ph == "prologue":
+        if p.get("to") != "briefing":
+            raise GameError("Start at the briefing hall. It's glowing on the map.")
+        state.update(phase="act1", stage="files", t=55)
+        set_timer(state, "act1")
+        log(state, events, "act_start", act=1)
+        cue(state, ["M01", "N02"], ["ui"], "explore")
+        return
+
+    if ph == "act1":
+        if action == "open_file":
+            fid = p.get("id")
+            if fid not in {f["id"] for f in C.FILES}:
+                raise GameError("Unknown file.")
+            if fid in state["files"]:
+                return
+            if len(state["files"]) >= 4:
+                raise GameError("You can open four files. Answer the readiness checks next.")
+            state["files"].append(fid)
+            minutes(state, 1, 47)
+            log(state, events, "file_open", file=fid, order=len(state["files"]), relevant=fid in C.RELEVANT_FILES)
+            return
+        if action == "answer":
+            q = next((q for q in C.CHECKS if q["id"] == p.get("q")), None)
+            if not q or p.get("choice") not in [o[0] for o in q["options"]]:
+                raise GameError("Please pick one answer.")
+            if state["checks"].get(q["id"]):
+                return
+            ch = p["choice"]
+            state["checks"][q["id"]] = ch
+            correct = ch == q["correct"]
+            d = meters(state, ready=3 if correct else (1 if ch == "unsure" else -2))
+            log(state, events, "check_answer", check=q["id"], choice=ch, correct=correct, honest_unsure=ch == "unsure",
+                files_open=list(state["files"]))
+            minutes(state, 1, 45)
+            say(state, None, d)
+            if all(state["checks"].get(c["id"]) for c in C.CHECKS):
+                start_act2(state, events)
+            return
+
+    if ph == "act2":
+        if action == "noor":
+            return noor_turn(state, events, p)
+        if action == "call":
+            return call_turn(state, events, p)
+        if action == "to_control":
+            if not state["noor"]["done"]:
+                raise GameError("Noor still needs you at the fuel bay.")
+            return start_act3(state, events)
+
+    if ph == "act3":
+        if action == "alert" and st in ("w1", "w2"):
+            return alert_turn(state, events, p, 1 if st == "w1" else 2)
+        if action == "director" and st == "director":
+            ch = p.get("choice")
+            if ch not in [o[0] for o in C.DIRECTOR]:
+                raise GameError("Choose a reply to the Director.")
+            text = (p.get("text") or "").strip()[:600]
+            state["director"], state["director_text"] = ch, text
+            if ch == "override":
+                state["flags"].append("overridden")
+                d = meters(state, ready=6)
+            else:
+                d = meters(state, trust=2)
+            log(state, events, "director_choice", choice=ch, text=text or None,
+                knew_rule="F4" in state["files"] or state["checks"].get("q2") == "range")
+            say(state, None, d)
+            if ch != "override":
+                cue(state, ["S02"], [])
+            return advance_act3(state, events)
+        if action == "priority" and st == "w3":
+            ch = p.get("choice")
+            if ch not in [o[0] for o in C.PRIORITY]:
+                raise GameError("Choose one alert.")
+            state["priority"] = ch
+            d = meters(state, ready=6 if ch == "critical" else -6)
+            log(state, events, "priority_choice", choice=ch)
+            say(state, None, d)
+            return start_act4(state, events)
+
+    if ph == "act4":
+        if action == "hamad" and st == "radio":
+            return hamad_turn(state, events, p)
+        if action == "promise" and st == "checklist":
+            pr = next((x for x in state["promises"] if x["id"] == p.get("id")), None)
+            ch = p.get("choice")
+            if not pr or ch not in COST:
+                raise GameError("Choose what to do with this promise.")
+            if pr["status"] != "open":
+                return
+            if COST[ch] > state["budget"]:
+                raise GameError("Not enough time left to deliver this one. Warn them, or let it slip.")
+            state["budget"] -= COST[ch]
+            pr["status"] = {"deliver": "kept", "warn": "warned", "slip": "slipped"}[ch]
+            etype = {"deliver": "promise_kept", "warn": "delay_notified", "slip": "promise_slipped"}[ch]
+            d = meters(state, trust={"deliver": 4, "warn": 1, "slip": -4}[ch])
+            log(state, events, etype, promise=pr["id"], to=pr["to"], notified=ch == "warn", budget_left=state["budget"])
+            say(state, None, d)
+            if all(x["status"] != "open" for x in state["promises"]):
+                start_epilogue(state, events)
+            return
+        if action == "close_checklist" and st == "checklist":
+            for pr in state["promises"]:
+                if pr["status"] == "open":
+                    pr["status"] = "slipped"
+                    log(state, events, "promise_slipped", promise=pr["id"], to=pr["to"], notified=False)
+            return start_epilogue(state, events)
+
+    if ph == "epilogue" and action == "handover":
+        picks = p.get("actions") or []
+        note = (p.get("note") or "").strip()[:2000]
+        if not isinstance(picks, list) or len(set(picks)) != 3 or any(k not in HANDOVER for k in picks):
+            raise GameError("Choose exactly three actions for the next shift.")
+        if len(note) < 20:
+            raise GameError("Please write a short handover note (a sentence or two).")
+        state["handover"] = {"actions": list(dict.fromkeys(picks)), "note": note}
+        log(state, events, "handover", actions=state["handover"]["actions"],
+            kinds=[HANDOVER[k][1] for k in state["handover"]["actions"]], note_length=len(note))
+        state.update(phase="launch", t=0)
+        cue(state, ["N11"], ["ignition"], "launch")
+        return
+
+    if ph == "launch" and action == "continue":
+        state["phase"] = "realwork"
+        log(state, events, "launch_seen")
+        cue(state, ["N12"], [], None)
+        return
+
+    if ph == "realwork" and action == "realwork":
+        ans = {k: (p.get(k) or "").strip()[:3000] for k, _ in C.REALWORK}
+        if any(len(v) < 20 for v in ans.values()):
+            raise GameError("Please answer both questions in a few sentences.")
+        state["realwork"] = ans
+        log(state, events, "realwork", lengths={k: len(v) for k, v in ans.items()})
+        state.update(phase="done", finished=True, end_reason="complete")
+        return
+
+    raise GameError("That isn't available right now.")
+
+
+def noor_turn(state: dict, events: list, p: dict) -> None:
+    n = state["noor"]
+    if n["done"]:
+        raise GameError("Noor's check is finished.")
+    step = n["step"]
+    choice, text = _choice(state, step, p, [o[0] for o in C.NOOR[step]["options"]])
+    if choice == "free":  # unclassified own words: the story continues on the supportive path, the text goes to the AI
+        choice = {"n1": "coach", "n2": "reassure", "n2b": "guide", "n3": "alone"}[step]
+        free = True
     else:
-        raise GameError("Unknown action.")
-    clamp(state)
+        free = bool(text)
+    n["path"].append(choice)
+    minutes(state, 2, 30)
+    log(state, events, "noor_choice", step=step, choice=choice, text=text, own_words=free,
+        knew_guide="F6" in state["files"])
+    d: dict = {}
+    if step == "n1":
+        if choice == "do_it":
+            d = meters(state, trust=2, ready=2)
+            state["followers"].append("Noor")
+            n.update(done=True, step=None)
+            say(state, C.NOOR_SAY["do_it"], d, "noor")
+            cue(state, ["NO4", "N04"], [])
+            return
+        d = meters(state, trust=8 if choice == "coach" else -4)
+        n["step"] = "n2"
+        say(state, C.NOOR_SAY.get(choice), d, "noor")
+        cue(state, ["NO2"], ["beep"])
+    elif step == "n2":
+        if choice == "takeover":
+            d = meters(state, trust=-2, ready=2)
+            state["followers"].append("Noor")
+            n.update(done=True, step=None)
+            say(state, C.NOOR_SAY["takeover"], d, "noor")
+            cue(state, ["N04"], [])
+            return
+        if choice == "reassure":
+            d = meters(state, trust=6)
+            n["step"] = "n2b"
+            say(state, C.NOOR["n2b"]["say"], d, "noor")
+            cue(state, [], ["ui"])
+        else:  # blame
+            d = meters(state, trust=-8)
+            n["step"] = "n3"
+            say(state, C.NOOR_SAY["blame"], d, "noor")
+            cue(state, ["NO3"], ["success"])
+    elif step == "n2b":
+        d = meters(state, ready=4 if choice == "guide" else -3)
+        n["step"] = "n3"
+        say(state, C.NOOR_SAY[choice], d, "noor")
+        cue(state, ["NO3"], ["success"])
+    elif step == "n3":
+        if choice == "multiply":
+            state["crew"].append("Noor")
+            state["flags"].append("noor_multiplier")
+            d = meters(state, trust=6, ready=2)
+        elif choice == "alone":
+            state["crew"].append("Noor")
+            d = meters(state, trust=3)
+        else:
+            state["followers"].append("Noor")
+            d = meters(state, trust=-2)
+        n.update(done=True, step=None)
+        say(state, C.NOOR_SAY[choice], d, "noor")
+        cue(state, ["N04"], ["success"])
 
 
-def norm_edge(e: str | None) -> str:
-    if not e or "-" not in e:
-        raise GameError("Choose a cable route.")
-    a, b = e.split("-", 1)
-    for cand in (f"{a}-{b}", f"{b}-{a}"):
-        if cand in EDGES:
-            return cand
-    raise GameError("Those two places are not next to each other.")
-
-
-def route_message(action: str, d_key: str, correct: bool) -> str:
-    name = DISTRICTS[d_key]["name"]
-    if correct:
-        return {"train": f"The Trainer worked with {name}'s team; they can now handle it themselves.",
-                "engineer": f"The Engineer repaired {name}'s equipment.",
-                "refer": f"The Liaison referred {name}'s issue to the right office; expect it resolved by the end of next round."}[action]
-    return {"train": f"{name}'s team learned some skills, but that wasn't what was blocking them.",
-            "engineer": f"The Engineer found nothing broken at {name}.",
-            "refer": f"The office sent {name}'s referral back: it isn't an access or policy question."}[action]
-
-
-# ======================================================================================= Kai co-op puzzle
-KAI_OPTIONS = {
-    0: [("vague", "Connect the power link."),
-        ("jargon", "Plug the 48-volt feeder into relay R2's primary bus."),
-        ("ask", "What can you see on each cable?"),
-        ("blame_early", "It's simple, just get on with it.")],
-    1: [("tell_amber", "Connect the amber cable, the one tagged 48V, to the socket marked R2."),
-        ("check", "Before you plug it in, can you tell me in your own words what you'll do?"),
-        ("take_over", "Never mind, I'll do it remotely myself.")],
-    2: [("reassure", "That's normal. The warning means it's syncing; nothing is broken. What does the warning say?"),
-        ("blame", "You must have done it wrong."),
-        ("take_over2", "Step back, I'll sort it out.")],
-    3: [("note", "Let's write a short note together in your own words, so you can do it next time."),
-        ("do_it", "Sure, just call me and I'll always do it."),
-        ("remember", "You should remember it now.")],
-}
-KAI_LINES = {
-    "start": "Kai: Hi... I'm in the relay room. There are three cables in front of me and I'm worried I'll short-circuit something. What should I do?",
-    "vague": "Kai: Which one is the power link? None of them says 'power'.",
-    "jargon": "Kai: Sorry, I don't know what a primary bus is. I just see three coloured cables.",
-    "ask": "Kai: The blue one has a tag that says DATA, the amber one says 48V, and the green one says SPARE.",
-    "blame_early": "Kai: Oh... OK. I'm not sure which one, though. (Kai sounds less confident.)",
-    "tell_amber": "Kai: Plugging the amber 48V cable into R2... done! Wait, a red warning is flashing. Did I break it?",
-    "check": "Kai: So I take the amber cable with the 48V tag and plug it into the socket labelled R2. Is that right?",
-    "check_then": "Kai: Great, doing it now... a red warning is flashing! Did I break it?",
-    "take_over": "Kai: Oh. OK, I'll just watch then... it's working now that you've done it. Can you just do it for me next time too?",
-    "reassure": "Kai: Phew. It says 'SYNCING 2/3'... and now it's green! Can you just do it for me next time though? I'll never remember.",
-    "blame": "Kai: I'm sorry... it's green now, I think. Maybe you should do these yourself next time.",
-    "take_over2": "Kai: OK. It's green now that you've done it. You'll do it next time too, right?",
-    "note": "Kai: I've written: 'Amber 48V cable to R2. Red warning = syncing, wait for green.' I think I could do that on my own now!",
-    "do_it": "Kai: Thanks! I'll call you every time then.",
-    "remember": "Kai: I'll try... (Kai doesn't sound sure.)",
-}
-
-
-def classify_free_text(step: int, text: str) -> str:
-    t = text.lower()
-    if step == 0:
-        if "?" in t or any(w in t for w in ("what do you see", "what can you see", "describe", "tell me what", "labels", "tags")):
-            return "ask"
-        if any(w in t for w in ("just", "simple", "obviously")):
-            return "blame_early"
-        return "jargon" if any(w in t for w in ("bus", "feeder", "volt")) else "vague"
-    if step == 1:
-        if "?" in t and any(w in t for w in ("own words", "what will you", "tell me", "repeat", "explain")):
-            return "check"
-        if any(w in t for w in ("i'll do it", "myself", "never mind")):
-            return "take_over"
-        return "tell_amber" if "amber" in t or "48" in t else "check"
-    if step == 2:
-        if any(w in t for w in ("wrong", "fault", "careless")):
-            return "blame"
-        if any(w in t for w in ("i'll sort", "step back", "let me do")):
-            return "take_over2"
-        return "reassure"
-    if any(w in t for w in ("note", "together", "write", "own words", "try")):
-        return "note"
-    if any(w in t for w in ("should remember", "should know")):
-        return "remember"
-    return "do_it" if any(w in t for w in ("call me", "i'll do", "always")) else "note"
-
-
-def kai_turn(state: dict, events: list, option: str | None, text: str | None) -> None:
-    k = state["kai"]
-    if state["round"] != 5:
-        raise GameError("Kai is only available in round 5.")
-    if option == "skip":
-        if k["solved"]:
-            raise GameError("You've already finished with Kai.")
-        k["skipped"] = True
-        log(state, events, "kai_skipped", step=k["step"])
+def call_turn(state: dict, events: list, p: dict) -> None:
+    cid = p.get("id")
+    call = CALL.get(cid)
+    if not call:
+        raise GameError("Unknown call.")
+    if cid in state["calls"]:
         return
-    if k["solved"]:
-        raise GameError("Kai's task is complete.")
-    if not k["transcript"]:
-        k["transcript"].append({"who": "kai", "text": KAI_LINES["start"]})
-    step = k["step"]
-    free = (text or "").strip()
-    if free:
-        option = classify_free_text(step, free)
-        said = free[:600]
+    if call.get("after_noor") and not state["noor"]["done"]:
+        raise GameError("Help Noor first.")
+    opt = next((o for o in call["options"] if o[0] == p.get("choice")), None)
+    if not opt:
+        raise GameError("Choose a reply.")
+    key, _, kind, correct = opt
+    state["calls"][cid] = {"choice": key}
+    effects = {
+        "c1.bypass": (3, -4), "c1.route": (2, 3), "c1.dismiss": (-4, 0),
+        "c2.fix": (3, 1), "c2.teach": (4, 2), "c2.dismiss": (-3, -1),
+        "c3.answer": (1, -1), "c3.route": (1, 3), "c3.guess": (-1, -3),
+        "c4.promise": (2, 0), "c4.teach": (4, 1), "c4.route": (0, 1),
+        "c5.promise": (2, 0), "c5.now": (1, 2), "c5.route": (0, 2),
+    }[f"{cid}.{key}"]
+    d = meters(state, trust=effects[0], ready=effects[1])
+    if cid == "c1" and key == "bypass":
+        state["flags"].append("c1_bypass")
+    if cid == "c2" and key == "teach":
+        state["crew"].append("Khalid")
+        state["flags"].append("khalid_taught")
+    if cid == "c4" and key == "teach":
+        state["crew"].append("Rashid")
+    if key == "promise":
+        state["promises"].append({"id": f"P-{cid}", "call": cid, "to": C.PROMISES[cid]["to"]["en"], "status": "open"})
+    minutes(state, 3 if key == "teach" else 2, 20)
+    log(state, events, "call_response", call=cid, who=call["who"]["en"], choice=key, kind=kind, correct_route=correct,
+        promise=key == "promise", control_bypass=key == "bypass")
+    say(state, C.CALL_SAY[f"{cid}.{key}"], d)
+    cue(state, [], ["ui"])
+
+
+def alert_turn(state: dict, events: list, p: dict, wave: int) -> None:
+    aid = p.get("id")
+    if aid not in wave_alerts(state, wave):
+        raise GameError("Unknown alert.")
+    if aid in state["alerts"]:
+        return
+    a = C.ALERTS[aid]
+    choice, station = p.get("choice"), p.get("station")
+    if "special" in a:
+        if choice not in [o[0] for o in a["special"]]:
+            raise GameError("Choose what to do.")
+        correct = choice == "confirm"
+        d = meters(state, ready=5 if correct else (-6 if choice == "abort" else -8))
+        state["alerts"][aid] = {"choice": choice}
+        log(state, events, "alert_response", alert=aid, choice=choice, correct=correct, knew_issue="F2" in state["files"])
     else:
-        valid = dict(KAI_OPTIONS[step])
-        if step == 1 and not k["asked_tags"]:
-            valid.pop("tell_amber", None)
-        if option not in valid:
-            raise GameError("Choose what to say to Kai.")
-        said = valid[option]
-    if step == 1 and option == "tell_amber" and not k["asked_tags"]:
-        option = "check" if "?" in said else "vague"  # the player cannot know the colour without asking
-    k["transcript"].append({"who": "you", "text": said})
-    log(state, events, "kai_message", step=step, intent=option, free_text=bool(free), text=said)
-    reply = option
-    if step == 0:
-        if option == "ask":
-            k["asked_tags"] = True; k["step"] = 1
-        elif option == "blame_early":
-            k["confidence"] -= 1
-    elif step == 1:
-        if option == "check":
-            k["checked"] = True; k["confidence"] += 1
-            reply = "check_then" if k.get("_checked_once") else "check"
-            if k.get("_checked_once"):
-                k["step"] = 2
-            k["_checked_once"] = True
-        elif option == "tell_amber":
-            k["step"] = 2
-        elif option == "take_over":
-            k["step"] = 3; k["warning_handled"] = "took_over"
-            state["districts"]["clinic"]["dependency"] += 1
-    elif step == 2:
-        k["warning_handled"] = option
-        if option == "reassure":
-            k["confidence"] += 1
-        elif option == "blame":
-            k["confidence"] -= 1
-        k["step"] = 3
-    elif step == 3:
-        k["next_time"] = option
-        if option == "note":
-            k["confidence"] += 1
-            state["districts"]["clinic"]["cap"] = min(3, state["districts"]["clinic"]["cap"] + 1)
-        k["solved"] = True
-        state["districts"]["clinic"]["service"] += 10
-        state["districts"]["clinic"]["blocker_resolved"] = True
-        log(state, events, "kai_solved", confidence=k["confidence"])
-    k["transcript"].append({"who": "kai", "text": KAI_LINES[reply]})
+        allowed = ["handle", "route"] + (["send"] if state["crew"] else []) + (["bypass"] if aid == "A2" and flag(state, "c1_bypass") else [])
+        if choice not in allowed:
+            raise GameError("Choose: handle it, send a crew member, or route it.")
+        if choice == "route" and station not in C.STATIONS:
+            raise GameError("Pick the station to route it to.")
+        correct = (choice == "route" and station == a["station"]) or (choice == "send" and aid in ("A1", "A6"))
+        d = meters(state, ready=4 if correct else (-1 if choice == "handle" else -3))
+        state["alerts"][aid] = {"choice": choice, "station": station}
+        log(state, events, "alert_response", alert=aid, choice=choice, station=station, right_station=a["station"],
+            correct=correct, used_crew=choice == "send", control_bypass=choice == "bypass")
+    say(state, None, d)
+    if all(x in state["alerts"] for x in wave_alerts(state, wave)):
+        advance_act3(state, events)
 
 
-# ======================================================================================= client view
-def view(state: dict) -> dict:
-    """What the browser may see: hidden information stays hidden until discovered."""
-    v = copy.deepcopy({k: state[k] for k in ("phase", "round", "energy", "cables_left", "links", "crew", "summary",
-                                             "archive_restricted", "archive_inspection", "overridden", "finished",
-                                             "end_reason", "stress_done")})
-    v["now"] = iso(now())
-    v["ends_at"] = state["ends_at"]
-    v["rounds"] = ROUNDS
-    v["practice_mode"] = state["phase"] == "practice"
-    v["notice"] = NOTICES.get(state["round"], "") if state["phase"] == "briefing" else None
-    v["rules"] = NOTICES.get(state["round"], "")
-    conn = connected(state)
-    v["districts"] = {}
-    for k, d in state["districts"].items():
-        b = DISTRICTS[k]
-        v["districts"][k] = {"name": b["name"], "x": b["x"], "y": b["y"], "service": d["service"], "cap": d["cap"],
-                             "connected": k in conn, "critical": b["critical"], "need": b["need"],
-                             "detail": b["detail"] if d["revealed"] else None, "diagnosis": d["diagnosis"],
-                             "resolved": d["blocker_resolved"], "referral_pending": d["referral_round"] is not None and not d["blocker_resolved"],
-                             "dependency": d["dependency"]}
-    v["core"] = CORE
-    v["edges"] = [{"id": e, "damaged": e in DAMAGED, "built": e in state["links"],
-                   "restricted": state["archive_restricted"] and "archive" in e and state["archive_inspection"] != "done"
-                   and e not in state["overridden"]} for e in EDGES]
-    v["requests"] = [{"id": q["id"], "district": q["district"], "text": q["text"], "response": q["response"]} for q in state["requests"]]
-    v["commitments"] = [{k: c[k] for k in ("id", "district", "text", "due", "status", "notified")} for c in state["commitments"]]
-    v["blockers"] = BLOCKERS
-    v["costs"] = COST
-    if state["stress"]:
-        s = STRESS[state["stress"]["id"]]
-        v["stress"] = {"id": state["stress"]["id"], "title": s["title"], "text": s["text"], "options": s["options"],
-                       "deadline": state["stress"]["deadline"], "seconds": state["stress"]["seconds"], "free_text": s.get("free_text")}
-    k = state["kai"]
-    if state["round"] == 5:
-        opts = KAI_OPTIONS.get(k["step"], []) if not k["solved"] else []
-        if k["step"] == 1 and not k["asked_tags"]:
-            opts = [o for o in opts if o[0] != "tell_amber"]
-        v["kai"] = {"transcript": k["transcript"] or [{"who": "kai", "text": KAI_LINES["start"]}],
-                    "options": opts, "solved": k["solved"], "skipped": k["skipped"]}
-    if state["finished"] or state["phase"] == "handover":
-        v["outcome"] = outcome(state)
+def hamad_turn(state: dict, events: list, p: dict) -> None:
+    h = state["hamad"]
+    step = h["step"]
+    opts = [o[0] for o in C.HAMAD[step]["options"]]
+    if step == "h2" and h["asked"]:
+        opts = [o for o in opts if o != "ask"]
+    choice, text = _choice(state, step, p, opts)
+    free = bool(text)
+    if choice == "free":
+        choice = {"h1": "ask", "h2": "reset", "h3": "reassure", "h4": "note"}[step]
+    h["path"].append(f"{step}:{choice}")
+    h["transcript"].append({"who": "you", "step": step, "choice": choice, "text": text})
+    log(state, events, "hamad_choice", step=step, choice=choice, text=text, own_words=free, asked_before=h["asked"],
+        knew_guide="F6" in state["files"])
+    d: dict = {}
+    if step in ("h1", "h2") and choice == "ask":
+        h["asked"] = True
+        h["step"] = "h2"
+        d = meters(state, trust=3)
+        say(state, None, d, "hamad")
+        cue(state, ["H02"], ["radio"])
+    elif step == "h1":
+        h["step"] = "h2"
+        say(state, C.HAMAD_SAY[choice], meters(state, trust=-2), "hamad")
+        cue(state, [], ["radio"])
+    elif step == "h2":
+        if choice == "red":
+            say(state, C.HAMAD_SAY["red"], meters(state, ready=-4), "hamad")
+            cue(state, [], ["radio"])
+        else:
+            h["step"] = "h3"
+            d = meters(state, ready=4)
+            say(state, None, d, "hamad")
+            cue(state, ["H03"], ["beep"])
+    elif step == "h3":
+        d = meters(state, trust={"reassure": 5, "takeover": -3, "blame": -6}[choice])
+        h["step"] = "h4"
+        say(state, C.HAMAD_SAY.get(choice), d, "hamad")
+        cue(state, ["H04"], ["success"])
+    elif step == "h4":
+        d = meters(state, trust={"check": 4, "note": 4, "call": -1}[choice], ready=2)
+        h.update(done=True, step=None)
+        say(state, C.HAMAD_SAY[choice], d, "hamad")
+        start_checklist(state, events)
+
+
+# ======================================================================================= view
+def outcome(state: dict) -> dict:
+    score = state["trust"] + state["ready"]
+    rank = next(r for floor, r in C.RANKS if score >= floor)
+    return {"trust": state["trust"], "ready": state["ready"], "crew": len(state["crew"]), "crew_names": list(state["crew"]),
+            "rank": rank["en"], "ending": "override" if flag(state, "overridden") else "held"}
+
+
+def view(state: dict, lang: str = "en") -> dict:
+    """Everything the browser may draw, in the chosen language."""
+    lang = "ar" if lang == "ar" else "en"
+    ph, st = state["phase"], state["stage"]
+    v: dict[str, Any] = {k: copy.deepcopy(state[k]) for k in ("phase", "stage", "finished", "end_reason", "deadline",
+                                                                 "stage_seconds", "ends_at", "cue", "crew", "trust", "ready")}
+    v.update(lang=lang, now=iso(now()), t=state["t"], hold=ph == "act3")
+    v["checklist_open"] = sum(1 for x in state["promises"] if x["status"] == "open")
+    fb = state["feedback"]
+    v["feedback"] = {"text": tr(fb["text"], lang), "delta": fb["delta"], "who": fb["who"], "seq": fb["seq"]} if fb else None
+    v["lines"] = {lid: {"speaker": spk, "name": tr(C.SPEAKERS[spk], lang), "text": tr(txt, lang)} for lid, (spk, txt) in C.LINES.items()}
+    v["objective"], v["objective_line"] = objective(state, lang)
+    v["files_known"] = list(state["files"])
+    v["locations"] = {k: tr(n, lang) for k, n in C.LOCATIONS.items()}
+    v["stations"] = [(k, tr(n, lang)) for k, n in C.STATIONS.items()]
+
+    if ph == "act1":
+        v["files"] = [{"id": f["id"], "title": tr(f["title"], lang), "body": tr(f["body"], lang) if f["id"] in state["files"] else None}
+                      for f in C.FILES]
+        v["checks"] = [{"id": q["id"], "q": tr(q["q"], lang), "answer": state["checks"].get(q["id"]),
+                        "options": [(k, tr(t, lang)) for k, t in q["options"]]} for q in C.CHECKS]
+    if ph == "act2":
+        n = state["noor"]
+        if not n["done"]:
+            node = C.NOOR[n["step"]]
+            hint = tr(C.FILES[5]["body"], lang) if node.get("hint_file") in state["files"] else None
+            v["noor"] = {"step": n["step"], "line": node.get("line"), "say": tr(node.get("say"), lang),
+                         "options": [(k, tr(t, lang)) for k, t in node["options"]], "hint": hint}
+        else:
+            v["noor"] = None
+        v["noor_done"] = n["done"]
+        v["calls"] = [{"id": c["id"], "loc": c["loc"], "who": tr(c["who"], lang), "text": tr(c["text"], lang),
+                       "locked": bool(c.get("after_noor") and not n["done"]), "answered": c["id"] in state["calls"],
+                       "options": [(o[0], tr(o[1], lang)) for o in c["options"]]} for c in C.CALLS]
+    if ph == "act3":
+        if st in ("w1", "w2"):
+            wave = 1 if st == "w1" else 2
+            alerts = []
+            for aid in wave_alerts(state, wave):
+                a = C.ALERTS[aid]
+                text = a["text_bypass"] if aid == "A2" and flag(state, "c1_bypass") else a["text"]
+                item = {"id": aid, "text": tr(text, lang), "done": aid in state["alerts"]}
+                if "special" in a:
+                    item["special"] = [(k, tr(t, lang)) for k, t in a["special"]]
+                    item["hint"] = tr(C.FILES[1]["body"], lang) if "F2" in state["files"] else None
+                else:
+                    acts = ["handle", "route"] + (["send"] if state["crew"] else [])
+                    if aid == "A2" and flag(state, "c1_bypass"):
+                        acts.append("bypass")
+                    item["actions"] = [(k, tr(C.ALERT_ACTIONS[k], lang)) for k in acts]
+                alerts.append(item)
+            v["alerts"] = alerts
+            v["auto"] = []
+            if wave == 2:
+                if flag(state, "khalid_taught"):
+                    v["auto"].append(tr(C.AUTO["A5"], lang))
+                if "Noor" in state["crew"]:
+                    v["auto"].append(tr(C.AUTO["A6_multiply" if flag(state, "noor_multiplier") else "A6_alone"], lang))
+        if st == "director":
+            v["director"] = [(k, tr(t, lang)) for k, t in C.DIRECTOR]
+            v["director_hint"] = tr(C.FILES[3]["body"], lang) if "F4" in state["files"] else None
+        if st == "w3":
+            v["priority"] = [(k, tr(t, lang)) for k, t in C.PRIORITY]
+    if ph == "act4":
+        h = state["hamad"]
+        if st == "radio" and not h["done"]:
+            node = C.HAMAD[h["step"]]
+            opts = [(k, tr(t, lang)) for k, t in node["options"] if not (h["step"] == "h2" and k == "ask" and h["asked"])]
+            v["hamad"] = {"step": h["step"], "line": node.get("line"), "options": opts, "asked": h["asked"],
+                          "manual": tr(C.MANUAL, lang),
+                          "hint": tr(C.FILES[7]["body"], lang) if h["step"] == "h1" and "F8" in state["files"] else None}
+        if st == "checklist":
+            v["checklist"] = {"budget": state["budget"], "items": [
+                {"id": x["id"], "text": tr(C.PROMISES[x["call"]]["text"], lang), "status": x["status"]} for x in state["promises"]],
+                "actions": [(k, tr(t, lang)) for k, t in C.CHECKLIST_ACTIONS]}
+    if ph == "epilogue":
+        v["handover"] = {"actions": [(k, tr(t, lang)) for k, t, _ in C.HANDOVER], "prompt": tr(C.HANDOVER_NOTE, lang)}
+    if ph in ("launch", "realwork", "done"):
+        o = outcome(state)
+        rank = next(r for floor, r in C.RANKS if state["trust"] + state["ready"] >= floor)
+        v["result"] = {**o, "rank": tr(rank, lang), "ending": tr(C.ENDINGS[o["ending"]], lang)}
+    if ph == "realwork":
+        v["realwork"] = [(k, tr(q, lang)) for k, q in C.REALWORK]
     return v
+
+
+def objective(state: dict, lang: str) -> tuple[str, str | None]:
+    ph, st = state["phase"], state["stage"]
+    key, line = {"intro": ("intro", None), "prologue": ("prologue", "N01"), "act1": ("act1", "N02"),
+                 "epilogue": ("epilogue", "N10"), "launch": ("launch", None), "realwork": ("realwork", "N12"),
+                 "done": ("done", None)}.get(ph, (None, None))
+    if ph == "act2":
+        if not state["noor"]["done"]:
+            key, line = "act2_noor", "N03"
+        elif len(state["calls"]) < len(CALL_IDS):
+            key, line = "act2_calls", "N04"
+        else:
+            key, line = "act2_go", "N04"
+    elif ph == "act3":
+        key, line = {"w1": ("act3_wave", "N06"), "w2": ("act3_wave", "N06"), "director": ("act3_director", "S01"),
+                     "w3": ("act3_priority", "N07")}[st]
+    elif ph == "act4":
+        key, line = ("act4_radio", "N08") if st == "radio" else ("act4_checklist", "N09")
+    return tr(C.OBJECTIVES[key], lang), line
 
 
 # ======================================================================================= evidence
 def evidence(state: dict, events: list) -> dict:
-    """Evidence lines per criterion, each citing event ids, plus rule-based indicator ratings used only
-    by the demo assessor. Practice events are excluded."""
-    ev = [e for e in events if not e.get("practice")]
-    by = lambda t: [e for e in ev if e["type"] == t]
-    lines: dict[str, list[str]] = {k: [] for k in ("credibility", "empathy", "reliability", "curiosity", "workflow", "judgment")}
+    """Evidence lines per criterion (each cites event ids) and the rule-based indicators the demo assessor uses."""
+    by = lambda t: [e for e in events if e["type"] == t]
+    lines: dict[str, list[str]] = {k: [] for k in CRITERIA}
     ind: dict[str, dict] = {}
+    noor = by("noor_choice")
+    calls = by("call_response")
+    alerts = by("alert_response")
+    hamad = by("hamad_choice")
+    ho = next(iter(by("handover")), None)
 
-    trains, fixes, peers = by("train"), by("fix_self"), by("peer_support")
-    s1 = next((e for e in by("stress_choice") if e["stress"] == "S1"), None) or next((e for e in by("stress_timeout") if e["stress"] == "S1"), None)
-    lines["credibility"] += [f"{e['id']} (round {e['round']}): trained {DISTRICTS[e['district']]['name']} instead of fixing it for them." for e in trains]
-    lines["credibility"] += [f"{e['id']} (round {e['round']}): fixed {DISTRICTS[e['district']]['name']} personally (quick, but builds dependency)." for e in fixes]
-    lines["credibility"] += [f"{e['id']} (round {e['round']}): {DISTRICTS[e['helper']]['name']}, which the player had built up, coached {DISTRICTS[e['helped']]['name']} independently." for e in peers]
-    if s1:
-        lines["credibility"].append(f"{s1['id']} stress moment S1 (Harbour demands a fix): " + (STRESS["S1"]["options"].get(s1.get("choice"), "no decision before the timer ran out")) + ".")
-    independent = sum(1 for d in state["districts"].values() if d["cap"] >= 2)
-    lines["credibility"].append(f"Game end: {independent} district(s) at capability 2 or more (able to operate and support peers).")
-    ind["credibility"] = {"trains": len(trains), "fixes": len(fixes), "peers": len(peers), "s1": s1.get("choice") if s1 else None,
-                          "independent": independent}
+    # ---- constructive peer influence
+    for e in noor:
+        lines["credibility"].append(f"{e['id']} Noor (nervous rookie) step {e['step']}: chose '{e['choice']}'" +
+                                    (f", in their own words: \"{e['text']}\"" if e.get("text") else "") + ".")
+    for e in calls:
+        if e["kind"] in ("teach", "fix", "dismiss"):
+            lines["credibility"].append(f"{e['id']} crew call from {e['who']}: {'taught them to do it themselves' if e['kind'] == 'teach' else 'did it for them' if e['kind'] == 'fix' else 'brushed them off'} ('{e['choice']}').")
+    for e in by("peer_payoff"):
+        lines["credibility"].append(f"{e['id']} later, without the player: {e['text']}")
+    sends = [e for e in alerts if e.get("used_crew")]
+    if sends:
+        lines["credibility"].append(f"In the emergency the player sent crew members they had built up to {len(sends)} alert(s) ({', '.join(e['id'] for e in sends)}).")
+    lines["credibility"].append(f"End of game: {len(state['crew'])} crew member(s) able to help others ({', '.join(state['crew']) or 'none'}); "
+                                f"{len(state['followers'])} still dependent on the player ({', '.join(state['followers']) or 'none'}).")
+    if ho:
+        lines["credibility"].append(f"{ho['id']} handover actions chosen: {', '.join(ho['actions'])} (kinds: {', '.join(ho['kinds'])}).")
+    ind["credibility"] = {"noor_path": state["noor"]["path"], "teach": sum(1 for e in calls if e["kind"] == "teach"),
+                          "fix": sum(1 for e in calls if e["kind"] == "fix"), "crew": len(state["crew"]),
+                          "followers": len(state["followers"]), "multiplier": flag(state, "noor_multiplier"),
+                          "ho_peer": sum(1 for k in (ho["kinds"] if ho else []) if k == "peer"),
+                          "ho_dep": sum(1 for k in (ho["kinds"] if ho else []) if k == "dependency"), "played": bool(noor or calls)}
 
-    k = state["kai"]
-    for m in by("kai_message"):
-        lines["empathy"].append(f"{m['id']} Kai step {m['step']}: player said \"{m['text']}\" (intent: {m['intent']}).")
-    if k["skipped"]:
-        lines["empathy"].append("The player skipped the Kai co-operation task.")
-    lines["empathy"].append(f"Kai's confidence moved from 2 to {k['confidence']}; asked Kai what it could see: {'yes' if k['asked_tags'] else 'no'}; "
-                            f"checked understanding: {'yes' if k['checked'] else 'no'}; response to the warning: {k['warning_handled'] or 'none'}; "
-                            f"next-time approach: {k['next_time'] or 'none'}.")
-    ind["empathy"] = {"asked": k["asked_tags"], "checked": k["checked"], "warning": k["warning_handled"], "next": k["next_time"],
-                      "skipped": k["skipped"], "blames": sum(1 for m in by("kai_message") if m["intent"] in ("blame", "blame_early", "remember")),
-                      "messages": len(by("kai_message"))}
+    # ---- empathy and accessible communication
+    for e in noor:
+        if e["step"] in ("n1", "n2"):
+            lines["empathy"].append(f"{e['id']} Noor panicking ({'first check' if e['step'] == 'n1' else 'amber light'}): '{e['choice']}'" +
+                                    (f" — \"{e['text']}\"" if e.get("text") else "") + ".")
+    for e in hamad:
+        lines["empathy"].append(f"{e['id']} radio with Hamad (he sees the panel, the player sees the manual) step {e['step']}: '{e['choice']}'" +
+                                (f" — \"{e['text']}\"" if e.get("text") else "") + (" (had already asked what he could see)" if e.get("asked_before") else "") + ".")
+    h = state["hamad"]
+    ind["empathy"] = {"noor_reassure": "reassure" in state["noor"]["path"] or "coach" in state["noor"]["path"],
+                      "blames": sum(1 for e in noor + hamad if e["choice"] == "blame"),
+                      "asked_first": bool(hamad) and hamad[0]["choice"] == "ask",
+                      "hamad_reassure": any(e["step"] == "h3" and e["choice"] == "reassure" for e in hamad),
+                      "check": any(e["step"] == "h4" and e["choice"] in ("check", "note") for e in hamad),
+                      "played": bool(noor or hamad), "asked": h["asked"]}
 
-    resp = by("request_response")
-    for e in resp:
-        lines["reliability"].append(f"{e['id']} (round {e['round']}): responded to request {e['request']} with '{e['choice']}'" + (f": \"{e['text']}\"" if e.get("text") else "") + ".")
-    for e in by("request_ignored"):
-        lines["reliability"].append(f"{e['id']}: request {e['request']} received no reply.")
-    for e in by("delay_notified"):
-        lines["reliability"].append(f"{e['id']} (round {e['round']}): told {e['commitment']} about a delay {e['rounds_before_due']} round(s) before it was due.")
-    for e in by("commitment_kept"):
-        lines["reliability"].append(f"{e['id']}: kept promise {e['commitment']}.")
-    for e in by("commitment_broken"):
-        lines["reliability"].append(f"{e['id']}: broke promise {e['commitment']}" + (" after warning of the delay." if e.get("notified") else " without warning."))
-    promised = [c for c in state["commitments"]]
-    ind["reliability"] = {"promised": len(promised), "kept": sum(1 for c in promised if c["status"] == "kept"),
-                          "broken_silent": sum(1 for e in by("commitment_broken") if not e.get("notified")),
-                          "notified": len(by("delay_notified")), "ignored": len(by("request_ignored")),
-                          "handover_len": len(state["handover"] or "")}
+    # ---- reliability and follow-through
+    for e in calls:
+        if e.get("promise"):
+            lines["reliability"].append(f"{e['id']} promised {e['who']} something due before launch.")
+    for e in by("call_ignored"):
+        lines["reliability"].append(f"{e['id']} a crew call from {e['who']} was never answered.")
+    for t, words in (("promise_kept", "delivered the promise to"), ("delay_notified", "warned early that the promise would be late, to"),
+                     ("promise_slipped", "let the promise slip, without warning,")):
+        for e in by(t):
+            lines["reliability"].append(f"{e['id']} {words} {e['to']}" + (" (when the timer ran out)" if e.get("by_timer") else "") + ".")
+    d = next(iter(by("director_choice")), None)
+    if d and d["choice"] == "refuse_escalate":
+        lines["reliability"].append(f"{d['id']} escalated the Director's demand to Range Safety straight away.")
+    if ho:
+        lines["reliability"].append(f"{ho['id']} wrote a handover note of {ho['note_length']} characters (see the handover source).")
+    ind["reliability"] = {"promised": len(state["promises"]), "kept": len(by("promise_kept")), "warned": len(by("delay_notified")),
+                          "slipped": len(by("promise_slipped")), "ignored": len(by("call_ignored")),
+                          "note_len": len((state["handover"] or {}).get("note", "")), "escalated": bool(d and d["choice"] == "refuse_escalate")}
 
-    acts = [e for e in ev if e["type"] in ("fix_self", "train", "engineer", "refer")]
-    informed = [e for e in acts if e.get("inspected")]
-    lines["curiosity"].append(f"{len(by('inspect'))} district inspections; {len(informed)} of {len(acts)} interventions were made after inspecting the district.")
-    r4_first = next((e for e in ev if e["round"] == 4 and e["type"] not in ("round_start", "stress_start", "stress_choice", "stress_timeout")), None)
-    if r4_first:
-        lines["curiosity"].append(f"{r4_first['id']} round 4: first action after the rule change was '{r4_first['type']}'" +
-                                  (" (the new rules notice had been read)." if 4 in state["notice_read"] else "."))
-    for e in by("inspection_requested"):
-        lines["curiosity"].append(f"{e['id']} (round {e['round']}): adapted to the new rule by requesting Archive's safety inspection.")
-    if k["asked_tags"]:
-        q = next(m for m in by("kai_message") if m["intent"] == "ask")
-        lines["curiosity"].append(f"{q['id']}: asked Kai what it could see before giving instructions.")
-    ind["curiosity"] = {"inspects": len(by("inspect")), "informed_ratio": (len(informed) / len(acts)) if acts else None,
-                        "adapted": bool(by("inspection_requested")), "asked_kai": k["asked_tags"]}
+    # ---- curiosity and learning agility
+    files = by("file_open")
+    if files:
+        lines["curiosity"].append(f"Mission files opened under a 3-minute clock: {', '.join(e['file'] + ('' if e['relevant'] else ' (low relevance)') for e in files)} ({files[0]['id']}–{files[-1]['id']}).")
+    else:
+        lines["curiosity"].append("No mission files were opened in the briefing.")
+    for e in by("check_answer"):
+        if e["honest_unsure"]:
+            lines["curiosity"].append(f"{e['id']} readiness check {e['check']}: said 'I'm not sure, I'd check first' rather than guess.")
+    if hamad:
+        lines["curiosity"].append(f"{hamad[0]['id']} first message to Hamad: '{hamad[0]['choice']}' ({'asked what he could see before instructing' if hamad[0]['choice'] == 'ask' else 'instructed without asking'}).")
+    ind["curiosity"] = {"files": len(files), "relevant": sum(1 for e in files if e["relevant"]), "distractor": any(e["file"] == "F7" for e in files),
+                        "unsure": sum(1 for e in by("check_answer") if e["honest_unsure"]), "asked": h["asked"]}
 
-    diag = by("diagnose")
-    routes = [e for e in ev if e["type"] in ("train", "engineer", "refer")]
-    for e in diag:
-        lines["workflow"].append(f"{e['id']} (round {e['round']}): diagnosed {DISTRICTS[e['district']]['name']} as '{BLOCKERS[e['choice']]}' ({'correct' if e['correct'] else 'incorrect'}).")
-    for e in routes:
-        lines["workflow"].append(f"{e['id']} (round {e['round']}): sent the {e['type']} route to {DISTRICTS[e['district']]['name']} ({'right' if e['correct_route'] else 'wrong'} route for a {BLOCKERS[e['blocker']].lower()}).")
-    conn = connected(state)
-    lines["workflow"].append(f"Game end: {len(conn)} of 6 districts connected to the core using {len(state['links'])} cable(s).")
-    ind["workflow"] = {"diag": len(diag), "diag_ok": sum(1 for e in diag if e["correct"]), "routes": len(routes),
-                       "routes_ok": sum(1 for e in routes if e["correct_route"]), "connected": len(conn)}
+    # ---- business workflow capability (process thinking in the game)
+    checks = by("check_answer")
+    for e in checks:
+        lines["workflow"].append(f"{e['id']} readiness check {e['check']}: '{e['choice']}' ({'correct' if e['correct'] else 'honest unsure' if e['honest_unsure'] else 'incorrect'}).")
+    for e in by("check_timeout"):
+        lines["workflow"].append(f"{e['id']} readiness check {e['check']} unanswered when the briefing clock ran out.")
+    routed = [e for e in calls if e["kind"] in ("route", "overstep")] + [e for e in alerts if "right_station" in e]
+    for e in routed:
+        if "right_station" in e:
+            lines["workflow"].append(f"{e['id']} alert {e['alert']}: {e['choice']}" + (f" to {e['station']}" if e.get("station") else "") +
+                                     f" (owner: {e['right_station']}; {'right' if e['correct'] else 'not the best'} route).")
+        else:
+            lines["workflow"].append(f"{e['id']} {e['who']}'s question: {'sent to the owning station' if e['kind'] == 'route' else 'answered it themselves although another station owns it'}.")
+    a4 = next((e for e in alerts if e["alert"] == "A4"), None)
+    if a4:
+        lines["workflow"].append(f"{a4['id']} low sensor reading on V-7: '{a4['choice']}' ({'confirmed before acting' if a4['correct'] else 'acted without confirming'}).")
+    for e in by("alert_missed"):
+        lines["workflow"].append(f"{e['id']} alert {e['alert']} missed when the wave timer ran out.")
+    route_items = [e for e in alerts if "right_station" in e] + [e for e in calls if e["call"] in ("c1", "c3")]
+    ok = sum(1 for e in route_items if e.get("correct") or e.get("correct_route"))
+    ind["workflow"] = {"checks_ok": sum(1 for e in checks if e["correct"]), "routes": len(route_items), "routes_ok": ok,
+                       "a4": a4["choice"] if a4 else None, "missed": len(by("alert_missed"))}
 
-    s2 = next((e for e in by("stress_choice") if e["stress"] == "S2"), None) or next((e for e in by("stress_timeout") if e["stress"] == "S2"), None)
-    if s2:
-        lines["judgment"].append(f"{s2['id']} stress moment S2 (official demands the safety lock is switched off): " +
-                                 STRESS["S2"]["options"].get(s2.get("choice"), "no decision before the timer ran out") + "." +
-                                 (f" Player wrote: \"{s2['text']}\"" if s2.get("text") else ""))
-    for e in by("override_restriction"):
-        lines["judgment"].append(f"{e['id']} (round {e['round']}): overrode the Archive inspection rule on cable {e['edge']} (control bypassed).")
-    for e in [x for x in fixes if x.get("control_bypass")]:
-        lines["judgment"].append(f"{e['id']} (round {e['round']}): fixed {DISTRICTS[e['district']]['name']}'s {e['blocker']} problem personally, bypassing the access/policy control.")
-    for sid in ("S3", "S4"):
-        e = next((x for x in by("stress_choice") if x["stress"] == sid), None)
-        if e:
-            lines["judgment"].append(f"{e['id']} stress moment {sid} ({STRESS[sid]['title']}): {STRESS[sid]['options'][e['choice']]}.")
-    ind["judgment"] = {"s2": s2.get("choice") if s2 else None, "overrides": len(by("override_restriction")),
-                       "control_fixes": sum(1 for x in fixes if x.get("control_bypass")),
-                       "s3": next((x["choice"] for x in by("stress_choice") if x["stress"] == "S3"), None),
-                       "s4": next((x["choice"] for x in by("stress_choice") if x["stress"] == "S4"), None)}
+    # ---- judgment and evidence quality
+    if d:
+        lines["judgment"].append(f"{d['id']} the Flight Director ordered a safety-lock override to save the launch window: '{d['choice']}'" +
+                                 (f"; the player said: \"{d['text']}\"" if d.get("text") else "") + ".")
+    for e in by("director_timeout"):
+        lines["judgment"].append(f"{e['id']} no answer to the Director before the 60-second timer ran out (the lock stayed on).")
+    for e in calls + alerts:
+        if e.get("control_bypass"):
+            lines["judgment"].append(f"{e['id']} shared personal login credentials with a colleague (access control bypassed).")
+    pr = next(iter(by("priority_choice")), None)
+    if pr:
+        lines["judgment"].append(f"{pr['id']} final wave, time for one: chose the {'safety-critical pressure alert' if pr['choice'] == 'critical' else 'routine press request'}.")
+    for e in by("priority_timeout"):
+        lines["judgment"].append(f"{e['id']} no choice made in the final wave before time ran out.")
+    if a4 and a4["choice"] in ("abort", "ignore"):
+        lines["judgment"].append(f"{a4['id']} reacted to a known false reading with '{a4['choice']}'.")
+    ind["judgment"] = {"director": d["choice"] if d else ("timeout" if by("director_timeout") else None),
+                       "bypass": sum(1 for e in calls + alerts if e.get("control_bypass")),
+                       "priority": pr["choice"] if pr else None, "a4": a4["choice"] if a4 else None}
     return {"lines": lines, "indicators": ind}
 
 
@@ -882,46 +844,36 @@ def evidence(state: dict, events: list) -> dict:
 def demo_rating(key: str, ind: dict, variant: str = "A") -> dict:
     """Rule-based provisional rating for the SIMULATED demo assessor only."""
     i = ind[key]
-    r: int | None
-    unsafe_serious = False
     strict = variant == "B"
+    unsafe_serious = False
+    r: int | None
     if key == "credibility":
-        if i["trains"] + i["fixes"] == 0 and not i["s1"]:
+        if not i["played"]:
             r = None
         else:
-            r = 3 + (1 if i["trains"] >= (3 if strict else 2) and i["trains"] > i["fixes"] else 0) \
-                + (1 if i["peers"] or i["s1"] == "teach_now" else 0) - (1 if i["fixes"] >= 3 else 0) - (1 if i["s1"] == "fix_for_them" else 0)
+            path = i["noor_path"]
+            r = 3 + (1 if "coach" in path and i["multiplier"] else 0) + (1 if i["teach"] >= (2 if strict else 1) and i["ho_peer"] >= 2 else 0) \
+                - (1 if any(x in path for x in ("do_it", "takeover", "keep")) else 0) - (1 if i["ho_dep"] else 0) - (1 if i["fix"] >= 2 else 0)
     elif key == "empathy":
-        if i["skipped"] or not i["messages"]:
-            r = None
-        else:
-            r = 2 + i["asked"] + (i["warning"] == "reassure") + (i["checked"] or i["next"] == "note") - min(2, i["blames"])
+        r = None if not i["played"] else 2 + i["noor_reassure"] + i["asked_first"] + i["hamad_reassure"] + (1 if i["check"] and not strict else 0) - min(2, i["blames"])
     elif key == "reliability":
-        if not i["promised"] and not i["ignored"]:
-            r = 3 if i["handover_len"] >= 80 else None
-        else:
-            r = 3 + (1 if i["promised"] and i["kept"] == i["promised"] else 0) + (1 if i["handover_len"] >= (150 if strict else 100) else 0) \
-                - 2 * min(1, i["broken_silent"]) - min(1, i["ignored"])
+        r = 3 + (1 if i["promised"] and i["slipped"] == 0 else 0) + (1 if i["note_len"] >= (150 if strict else 100) else 0) \
+            - (2 if i["slipped"] else 0) - min(1, i["ignored"]) + (1 if i["escalated"] and not i["promised"] else 0)
     elif key == "curiosity":
-        ratio = i["informed_ratio"]
-        if ratio is None and not i["inspects"]:
-            r = None
-        else:
-            r = 2 + (1 if (ratio or 0) >= (0.75 if strict else 0.6) else 0) + i["adapted"] + i["asked_kai"]
+        r = 2 + (1 if i["relevant"] >= 3 and not i["distractor"] else 0) + (1 if i["unsure"] or i["files"] >= 3 else 0) + (1 if i["asked"] else 0)
+        if strict and i["files"] < 2:
+            r -= 1
     elif key == "workflow":
-        if not i["diag"] and not i["routes"]:
-            r = None
-        else:
-            acc = (i["routes_ok"] / i["routes"]) if i["routes"] else 0.5
-            r = 2 + (1 if acc >= (0.8 if strict else 0.7) else 0) + (1 if i["diag"] and i["diag_ok"] / i["diag"] >= 0.75 else 0) + (1 if i["connected"] >= 5 else 0)
+        acc = (i["routes_ok"] / i["routes"]) if i["routes"] else 0.5
+        r = 2 + (1 if i["checks_ok"] >= 2 else 0) + (1 if acc >= (0.8 if strict else 0.7) else 0) + (1 if i["a4"] == "confirm" else 0) - (1 if i["missed"] >= 3 else 0)
     else:  # judgment
-        if i["s2"] is None and not i["overrides"] and not i["control_fixes"]:
+        if i["director"] is None and not i["bypass"]:
             r = None
-        elif i["s2"] == "switch_off":
+        elif i["director"] == "override":
             r, unsafe_serious = 1, True
         else:
-            r = 3 + (1 if i["s2"] == "refuse_escalate" else 0) + (1 if i["s3"] == "protect_clinic" or i["s4"] in ("clinic_first", "peer_transit") else 0) \
-                - min(2, i["overrides"] + i["control_fixes"])
+            r = 3 + (1 if i["director"] == "refuse_escalate" else 0) + (1 if i["priority"] == "critical" else 0) \
+                - min(2, i["bypass"]) - (1 if i["a4"] in ("abort", "ignore") else 0) - (1 if i["director"] == "timeout" else 0)
     if r is not None:
         r = max(1, min(5, int(r)))
     return {"rating": r, "unsafe_serious": unsafe_serious}
@@ -929,17 +881,31 @@ def demo_rating(key: str, ind: dict, variant: str = "A") -> dict:
 
 def snapshot_sources(state: dict, events: list) -> tuple[list[dict], dict]:
     ev = evidence(state, events)
-    names = {"credibility": "Peer influence in the game", "empathy": "Co-operation with Kai, the AI teammate",
-             "reliability": "Requests, promises and the handover note", "curiosity": "Exploring, asking and adapting",
-             "workflow": "Diagnosing blockers, routing support and connecting the network",
-             "judgment": "Safety controls and priorities under pressure"}
+    names = {"credibility": "Helping crew members: doing it for them or building their skills",
+             "empathy": "Supporting a panicking rookie and guiding an engineer by radio",
+             "reliability": "Promises, unanswered calls, escalation and the handover",
+             "curiosity": "What they chose to learn, admitting gaps, asking before instructing",
+             "workflow": "Process thinking: readiness checks, routing to the owning station, confirming before acting",
+             "judgment": "A senior order to override a safety lock, credential sharing, and priorities under pressure"}
     src = []
     for key, lines in ev["lines"].items():
-        src.append({"id": f"GAME-{key}", "criterion": key, "label": f"NEXUS game record: {names[key]} (performance within a digital exercise; event ids cite moments)",
+        src.append({"id": f"GAME-{key}", "criterion": key,
+                    "label": f"LAUNCH WINDOW game record: {names[key]} (performance within a fictional role-play; event ids cite moments)",
                     "text": "\n".join(lines)})
-    if state["handover"]:
-        src.append({"id": "GAME-handover", "criterion": "reliability", "label": "Player's handover note at the end of the game",
-                    "text": state["handover"]})
-    for sid, text in state["stress_free_text"].items():
-        src.append({"id": f"GAME-{sid}-text", "criterion": "judgment", "label": f"What the player wrote during stress moment {sid}", "text": text})
+    if state.get("handover"):
+        src.append({"id": "GAME-handover", "criterion": "reliability", "label": "Player's handover note to the next shift",
+                    "text": state["handover"]["note"]})
+    if state.get("director_text"):
+        src.append({"id": "GAME-director-text", "criterion": "judgment",
+                    "label": "What the player wrote to the Flight Director under a 60-second timer", "text": state["director_text"]})
+    for step, text in (state.get("free_text") or {}).items():
+        crit = "empathy" if step.startswith(("n2", "h")) else "credibility"
+        src.append({"id": f"GAME-words-{step}", "criterion": crit, "label": f"The player's own words at dialogue step {step}", "text": text})
+    rw = state.get("realwork") or {}
+    if rw.get("q1"):
+        src.append({"id": "REAL-1", "criterion": "credibility",
+                    "label": "Real-work question: a time they helped a colleague learn something new", "text": rw["q1"]})
+    if rw.get("q2"):
+        src.append({"id": "REAL-2", "criterion": "workflow",
+                    "label": "Real-work question: a work process they know well and where it goes wrong", "text": rw["q2"]})
     return src, ev["indicators"]

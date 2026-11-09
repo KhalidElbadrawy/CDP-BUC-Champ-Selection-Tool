@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS clarifications (
   criterion TEXT NOT NULL, kind TEXT NOT NULL, question TEXT NOT NULL,
   response TEXT, responded_at TEXT, created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS game_sessions (        -- NEXUS game (stage 2)
+CREATE TABLE IF NOT EXISTS game_sessions (        -- LAUNCH WINDOW game (stage 2)
   candidate_id INTEGER PRIMARY KEY REFERENCES candidates(id),
   state_json TEXT, events_json TEXT DEFAULT '[]', outcome_json TEXT,
   started_at TEXT, completed_at TEXT

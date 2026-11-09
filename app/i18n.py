@@ -2,6 +2,15 @@
 from __future__ import annotations
 
 AR: dict[str, str] = {
+    'A story game set at a fictional launch base in the last hour before a launch. You help the crew, handle alerts and make decisions against the clock.': 'لعبة قصصية تدور في قاعدة إطلاق خيالية خلال الساعة الأخيرة قبل الإطلاق. تساعد الطاقم، وتتعامل مع التنبيهات، وتتخذ القرارات في سباق مع الوقت.',
+    'You have been shortlisted as a possible CDP Business User Champion. The assessment is a short story game. It looks at how you work with people, keep promises and make decisions under pressure. At the end there are two short questions about your real work. There are no trick questions; act as you really would.': 'تم ترشيحك ضمن القائمة المختصرة لتكون بطلاً لمستخدمي الأعمال في المنصات الرقمية المشتركة. التقييم لعبة قصصية قصيرة، تنظر في طريقة عملك مع الآخرين، ووفائك بالوعود، واتخاذك للقرارات تحت الضغط. وفي النهاية سؤالان قصيران عن عملك الفعلي. لا توجد أسئلة خادعة؛ تصرّف كما تتصرف فعلاً.',
+    'Play LAUNCH WINDOW (recommended)': 'العب نافذة الإطلاق (موصى به)',
+    'A role-playing game with voices, music and a countdown, in English or Arabic. Captions are always on.': 'لعبة أدوار بأصوات وموسيقى وعدّ تنازلي، بالعربية أو الإنجليزية. الترجمة النصية تظهر دائماً.',
+    'About 35 minutes plus two short questions, with a few timed moments.': 'نحو 35 دقيقة وسؤالان قصيران، مع بعض اللحظات المحددة بوقت.',
+    'Best on a laptop or tablet with sound. Your progress is saved after every move.': 'الأفضل على حاسوب محمول أو جهاز لوحي مع الصوت. يُحفظ تقدّمك بعد كل خطوة.',
+    'Play LAUNCH WINDOW': 'العب نافذة الإطلاق',
+    'The same launch-base situations, answered in writing.': 'المواقف نفسها في قاعدة الإطلاق، بإجابات مكتوبة.',
+    'The written scenarios': 'المواقف المكتوبة',
     "CDP Champion Nomination Tool": "أداة ترشيح أبطال المنصات الرقمية المشتركة",
     "Common Digital Platforms": "المنصات الرقمية المشتركة",
     "Business User Champion": "بطل مستخدمي الأعمال",

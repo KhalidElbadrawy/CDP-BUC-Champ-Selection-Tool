@@ -1,35 +1,47 @@
-{% extends "base.html" %}{% block title %}NEXUS: Reconnect the City{% endblock %}{% block content %}
-<link rel="stylesheet" href="/static/nexus.css">
-<div id="nexus" class="nexus" data-csrf="{{ csrf }}">
-  <div class="nx-bar" role="status" aria-live="polite">
-    <div class="nx-title">NEXUS <span>Reconnect the City</span></div>
-    <div class="nx-stats">
-      <span class="nx-chip" id="nx-round">Practice</span>
-      <span class="nx-chip" title="Energy left this round">⚡ <b id="nx-energy">–</b></span>
-      <span class="nx-chip" title="Cables left">⌁ <b id="nx-cables">–</b> cables</span>
-      <span class="nx-chip" id="nx-crew" title="Crew available this round"></span>
-      <span class="nx-chip nx-clock" id="nx-clock" title="Time left">--:--</span>
-    </div>
-  </div>
+<!doctype html>
+<html lang="{{ lang }}" dir="{{ dir }}">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LAUNCH WINDOW</title>
+<meta name="theme-color" content="#05070d">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap">
+<link rel="preload" as="image" href="/static/launch/img/pad.webp">
+<link rel="stylesheet" href="/static/launch/launch.css">
+</head>
+<body>
+<div id="lw" class="lw phase-intro" data-csrf="{{ csrf }}" data-lang="{{ lang }}">
+  <div class="lw-bg" id="lw-bg" aria-hidden="true"><div class="lw-bg-img" id="lw-bg-img"></div><canvas id="lw-fx"></canvas><div class="lw-cones" id="lw-cones"><i></i><i></i><i></i><i></i></div></div>
+  <div class="lw-grain" aria-hidden="true"></div>
+  <div class="lw-vignette" aria-hidden="true"></div>
+  <div class="lw-alert-wash" aria-hidden="true"></div>
+  <div class="lw-letterbox" aria-hidden="true"><i></i><i></i></div>
 
-  <div class="nx-main">
-    <div class="nx-mapwrap">
-      <svg id="nx-map" viewBox="0 0 800 580" role="group" aria-label="City map: districts and cable routes"></svg>
-      <div class="nx-legend small"><span><i class="lg built"></i>cable</span><span><i class="lg open"></i>route you can cable</span><span><i class="lg damaged"></i>damaged</span><span><i class="lg restricted"></i>needs inspection</span></div>
+  <header class="lw-hud" id="lw-hud">
+    <div class="lw-brand">LAUNCH WINDOW<span class="ar">نافذة الإطلاق</span></div>
+    <div class="lw-clock" id="lw-clock" role="timer" aria-live="off"><b id="lw-t">T−60:00</b><span id="lw-t-label"></span></div>
+    <div class="lw-meters">
+      <div class="lw-meter" id="m-trust"><span class="lbl"></span><div class="bar"><i></i></div><b></b></div>
+      <div class="lw-meter" id="m-ready"><span class="lbl"></span><div class="bar"><i></i></div><b></b></div>
+      <div class="lw-chip" id="m-crew"></div>
+      <div class="lw-chip" id="m-check"></div>
     </div>
-    <aside class="nx-panel" aria-label="Control panel">
-      <div id="nx-msg" class="nx-msg" role="alert" hidden></div>
-      <div id="nx-summary" class="nx-summary"></div>
-      <section id="nx-district"></section>
-      <section id="nx-kai" hidden></section>
-      <section id="nx-requests"></section>
-      <details class="nx-net"><summary>All cable routes (keyboard friendly)</summary><div id="nx-edges"></div></details>
-      <div class="nx-end"><button id="nx-endround" class="nx-btn primary">End round</button></div>
-    </aside>
-  </div>
+    <div class="lw-tools">
+      <button class="lw-tool" id="lw-whatnow" type="button"></button>
+      <button class="lw-tool" id="lw-sound" type="button" aria-pressed="true"></button>
+      <button class="lw-tool" id="lw-lang" type="button"></button>
+    </div>
+  </header>
 
-  <div id="nx-overlay" class="nx-overlay" hidden><div class="nx-modal" role="dialog" aria-modal="true" aria-labelledby="nx-modal-title" id="nx-modal"></div></div>
+  <div class="lw-objective" id="lw-objective" role="status" aria-live="polite"><span class="beacon" aria-hidden="true"></span><span id="lw-objective-text"></span><span class="lw-timer" id="lw-timer" hidden><svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15.5"/><circle class="ring" id="lw-ring" cx="18" cy="18" r="15.5"/></svg><b id="lw-timer-s"></b></span></div>
+
+  <main class="lw-stage" id="lw-stage" tabindex="-1"></main>
+
+  <div class="lw-feedback" id="lw-feedback" role="status" aria-live="polite" hidden></div>
+  <div class="lw-error" id="lw-error" role="alert" hidden></div>
+  <div class="lw-caption" id="lw-caption" aria-live="polite" hidden><span class="who" id="lw-caption-who"></span><span id="lw-caption-text"></span></div>
 </div>
-<noscript><div class="flash err">The NEXUS game needs JavaScript. Please ask the CDP Change Lead for the written version.</div></noscript>
-<script src="/static/nexus.js"></script>
-{% endblock %}
+<noscript><p style="color:#fff;padding:24px;font-family:sans-serif">LAUNCH WINDOW needs JavaScript. Please ask for the written version.</p></noscript>
+<script src="/static/launch/launch.js"></script>
+</body>
+</html>

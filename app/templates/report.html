@@ -25,14 +25,14 @@
 </section>
 
 <section class="card"><h2>Phase 2: game outcome</h2>
-{% if game and game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p>City services restored: {{ g.restored }} · Districts operating independently: {{ g.independent }} · Safety controls kept: {{ g.controls }}</p>
-{% else %}<p class="muted">{{ "Completed through the NEXUS text scenarios (no game outcome)." if c.assessment_mode in ("text","offline") else "Not played." }}</p>{% endif %}
+{% if game and game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p>LAUNCH WINDOW rank: {{ g.rank }} · Crew trust: {{ g.trust }} · Launch readiness: {{ g.ready }} · Crew members built up: {{ g.crew }} · Safety lock: {{ "overridden" if g.ending == "override" else "held" }}</p>
+{% else %}<p class="muted">{{ "Completed through the written scenarios (no game outcome)." if c.assessment_mode in ("text","offline") else "Not played." }}</p>{% endif %}
 <p class="small muted">The game outcome is shown for context only. It is not part of the assessment score.</p>
 </section>
 
 <section class="card"><h2>Phase 2: behavioural assessment</h2>
 {% set detail = True %}{% include "_assessment.html" %}
-<p class="small muted">Assessment mode: {{ {"text": "NEXUS text scenarios", "offline": "offline document entered by the Change Lead", "game": "NEXUS game"}.get(c.assessment_mode, "—") }}{% if asmt %} · evidence version {{ asmt.evidence_version }} · settings version {{ asmt.config_version }} · {{ (asmt.completed_at or asmt.created_at)[:16]|replace("T", " ") }}{% endif %}</p>
+<p class="small muted">Assessment mode: {{ {"text": "written scenarios", "offline": "offline document entered by the Change Lead", "game": "LAUNCH WINDOW game"}.get(c.assessment_mode, "—") }}{% if asmt %} · evidence version {{ asmt.evidence_version }} · settings version {{ asmt.config_version }} · {{ (asmt.completed_at or asmt.created_at)[:16]|replace("T", " ") }}{% endif %}</p>
 </section>
 
 <section class="card"><h2>Decision</h2>
