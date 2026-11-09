@@ -277,6 +277,14 @@ def initiative_export(iid: int, request: Request):
     return register_csv(workflow.dashboard(iid)["rows"], f"{i['name'].replace(' ', '-').lower()}-register.csv")
 
 
+def step_locked(iid: int, no: int) -> RedirectResponse | None:
+    """Actions belonging to a step marked complete are refused until the step is reopened."""
+    row = db.q1("SELECT completed_at FROM initiative_steps WHERE initiative_id=? AND step_no=?", (iid, no))
+    if row and row["completed_at"]:
+        return back(f"/i/{iid}", err=f"Step {no} is marked complete. Reopen it to make changes.")
+    return None
+
+
 # ------------------------------------------------------------------ survey import
 def _staging() -> Path:
     p = Path(config.settings.db_path).parent / "staging"
@@ -287,6 +295,8 @@ def _staging() -> Path:
 @app.post("/i/{iid}/import", response_class=HTMLResponse)
 async def import_upload(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 2)):
+        return locked
     i = get_init(iid)
     f = await request.form()
     security.check_csrf(request, f.get("csrf"))
@@ -309,6 +319,8 @@ async def import_upload(iid: int, request: Request):
 @app.post("/i/{iid}/import/confirm")
 async def import_confirm(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 2)):
+        return locked
     get_init(iid)
     f = await form(request)
     key = f.get("key", "")
@@ -336,6 +348,8 @@ async def import_confirm(iid: int, request: Request):
 @app.post("/i/{iid}/cvs", response_class=HTMLResponse)
 async def cv_bulk(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 3)):
+        return locked
     i = get_init(iid)
     f = await request.form()
     security.check_csrf(request, f.get("csrf"))
@@ -361,6 +375,8 @@ async def cv_bulk(iid: int, request: Request):
 @app.post("/i/{iid}/cvs/assign")
 async def cv_assign(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 3)):
+        return locked
     get_init(iid)
     f = await form(request)
     assigned = 0
@@ -388,6 +404,8 @@ async def cv_assign(iid: int, request: Request):
 @app.post("/i/{iid}/consent-all")
 async def consent_all(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 4)):
+        return locked
     get_init(iid)
     f = await form(request)
     if f.get("confirm") != "yes":
@@ -399,6 +417,8 @@ async def consent_all(iid: int, request: Request):
 @app.post("/i/{iid}/screen")
 async def screen_all(iid: int, request: Request, background: BackgroundTasks):
     lead(request)
+    if (locked := step_locked(iid, 4)):
+        return locked
     get_init(iid)
     await form(request)
     ids = [r["id"] for r in db.q("SELECT id FROM candidates WHERE initiative_id=? AND status='CV Uploaded' AND consent_screening=1", (iid,))]
@@ -412,6 +432,8 @@ async def screen_all(iid: int, request: Request, background: BackgroundTasks):
 @app.post("/i/{iid}/links.csv")
 async def links_export(iid: int, request: Request):
     lead(request)
+    if (locked := step_locked(iid, 6)):
+        return locked
     i = get_init(iid)
     f = await form(request)
     only_new = f.get("scope") != "all"

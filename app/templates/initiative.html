@@ -17,6 +17,10 @@
   <div class="bar" style="max-width:520px" aria-hidden="true"><span style="width:{{ (100 * done_steps / steps|length)|round|int }}%"></span></div>
 </section>
 
+{% set done = {} %}{% for s in steps %}{% if s.completed_at %}{% set _ = done.update({s.no: s.completed_at}) %}{% endif %}{% endfor %}
+{% macro locked_note(no) %}{% if done.get(no) %}<div class="locked-note" role="status"><span class="locked-badge">✓ Step {{ no }} completed {{ done[no][:10] }}</span>
+<span class="small muted">Reopen this step to make changes.</span>
+<form method="post" action="/i/{{ i.id }}/step/{{ no }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="complete" value="0"><button class="small secondary">Reopen</button></form></div>{% endif %}{% endmacro %}
 <div class="layout-2">
 <section class="card tracker" aria-label="Step tracker"><h2>Steps</h2>
 <ol class="steplist">{% for s in steps %}
@@ -34,17 +38,20 @@
 </section>
 
 <div class="stack">
-<section class="card"><h2>Step 2 · Import survey results</h2>
+<section class="card{{ " locked" if done.get(2) }}"><h2>Step 2 · Import survey results</h2>
+{{ locked_note(2) }}<fieldset class="lockable" {{ "disabled" if done.get(2) }}>
 <p class="small muted">Upload the Excel or CSV export from your survey tool. You'll check the matched columns before anything is imported.</p>
 <form method="post" action="/i/{{ i.id }}/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="file" name="file" accept=".xlsx,.csv" required aria-label="Survey export file"><div class="actions"><button>Upload survey file</button></div></form></section>
+<input type="file" name="file" accept=".xlsx,.csv" required aria-label="Survey export file"><div class="actions"><button>Upload survey file</button></div></form></fieldset></section>
 
-<section class="card"><h2>Step 3 · Upload CVs</h2>
+<section class="card{{ " locked" if done.get(3) }}"><h2>Step 3 · Upload CVs</h2>
+{{ locked_note(3) }}<fieldset class="lockable" {{ "disabled" if done.get(3) }}>
 <p class="small muted">Select many files at once. Files are matched to nominees by name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>; two parts of the name are enough). On the next page, pick the nominee for any file that wasn't matched.</p>
 <form method="post" action="/i/{{ i.id }}/cvs" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="file" name="files" accept=".pdf,.docx" multiple required aria-label="CV files"><div class="actions"><button>Upload CVs</button></div></form></section>
+<input type="file" name="files" accept=".pdf,.docx" multiple required aria-label="CV files"><div class="actions"><button>Upload CVs</button></div></form></fieldset></section>
 
-<section class="card"><h2>Step 4 · AI fit rating</h2>
+<section class="card{{ " locked" if done.get(4) }}"><h2>Step 4 · AI fit rating</h2>
+{{ locked_note(4) }}<fieldset class="lockable" {{ "disabled" if done.get(4) }}>
 <p class="small muted">{{ eligible }} CV(s) ready to screen. Only nominees with recorded consent are screened. High and Moderate Fit are shortlisted automatically; you can change any category with a reason on the nominee's page.</p>
 {% if not eligible %}<div class="notice small"><strong>Why nothing is ready:</strong>
 {% if not blockers.total %} no nominees yet. Import the survey results first (step 2).
@@ -57,13 +64,14 @@
 <form method="post" action="/i/{{ i.id }}/consent-all"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label class="radio"><input type="checkbox" name="confirm" value="yes" required> I confirm these nominees agreed to AI screening of their CV (for example by email or in a meeting).</label>
 <div class="actions"><button class="secondary small">Record consent</button></div></form></details>{% endif %}
-<form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>Run AI fit rating</button></form></section>
+<form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>Run AI fit rating</button></form></fieldset></section>
 
-<section class="card"><h2>Step 6 · Send assessment links</h2>
+<section class="card{{ " locked" if done.get(6) }}"><h2>Step 6 · Send assessment links</h2>
+{{ locked_note(6) }}<fieldset class="lockable" {{ "disabled" if done.get(6) }}>
 <p class="small muted">{{ shortlisted }} shortlisted candidate(s). Download a mail-merge list (name, email, personal link) and send the links from your own mailbox. Creating links again replaces older ones.</p>
 <form method="post" action="/i/{{ i.id }}/links.csv" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}">
 <button name="scope" value="new" {{ "disabled" if not shortlisted }}>Download links for candidates without one</button>
-<button name="scope" value="all" class="secondary" {{ "disabled" if not shortlisted }}>Recreate all links</button></form></section>
+<button name="scope" value="all" class="secondary" {{ "disabled" if not shortlisted }}>Recreate all links</button></form></fieldset></section>
 </div>
 </div>
 

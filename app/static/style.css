@@ -275,3 +275,15 @@ tbody tr { transition: background .2s; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
 }
+
+/* completed steps: green markers; their action cards are locked until reopened */
+.steplist li.done .stepnum { background: var(--ok); color: #05210f; }
+.steplist li.done .stepbody strong { color: var(--ok); }
+fieldset.lockable { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.lockable:disabled { opacity: .38; filter: grayscale(1); pointer-events: none; user-select: none; }
+.card.locked { border-color: rgba(95,214,141,.28); background: #0a0f17; box-shadow: none; }
+.card.locked > h2 { color: var(--muted); }
+.locked-note { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: -4px 0 14px; padding: 10px 12px;
+  border-radius: 14px; background: var(--soft-ok); border: 1px solid rgba(95,214,141,.3); }
+.locked-badge { color: var(--ok); font-weight: 700; font-size: .88rem; }
+.locked-note form { margin-inline-start: auto; }

@@ -477,3 +477,16 @@ def test_live_call_uses_structured_outputs(monkeypatch):
             for v in node:
                 walk(v)
     walk(fmt["schema"])
+
+
+def test_completed_steps_lock_their_actions(client):
+    login(client)
+    iid = workflow.create_initiative("Lock Test")
+    workflow.set_step(iid, 2, True)
+    page = client.get(f"/i/{iid}").text
+    assert 'class="card locked"' in page and "Step 2 completed" in page
+    r = client.post(f"/i/{iid}/import", data={"csrf": csrf(client)}, files={"file": ("n.csv", b"Nominee name,Entity\nA B,E\n")})
+    assert "Step 2 is marked complete" in r.text
+    client.post(f"/i/{iid}/step/2", data={"csrf": csrf(client), "complete": "0"})
+    r = client.post(f"/i/{iid}/import", data={"csrf": csrf(client)}, files={"file": ("n.csv", b"Nominee name,Entity\nA B,E\n")})
+    assert "Check the survey columns" in r.text
