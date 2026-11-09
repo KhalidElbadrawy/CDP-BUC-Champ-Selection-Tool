@@ -9,8 +9,13 @@
 </details>
 {% endblock %}{% block content %}
 <p><a href="/">← Dashboard</a></p>
-<h1>{{ i.name }}{% if i.status == "closed" %} <span class="pill">closed</span>{% endif %}</h1>
-<p class="muted">{{ i.platform or "" }}{% if i.platform and i.description %} · {% endif %}{{ i.description or "" }}</p>
+{% set done_steps = steps|selectattr("completed_at")|list|length %}
+<section class="hero" aria-labelledby="init-title">
+  <div class="eyebrow">Initiative{% if i.platform %} · {{ i.platform }}{% endif %}{% if i.status == "closed" %} · closed{% endif %}</div>
+  <h1 id="init-title">{{ i.name }}<span class="line2">Champion journey: {{ done_steps }} of {{ steps|length }} steps</span></h1>
+  {% if i.description %}<p>{{ i.description }}</p>{% endif %}
+  <div class="bar" style="max-width:520px" aria-hidden="true"><span style="width:{{ (100 * done_steps / steps|length)|round|int }}%"></span></div>
+</section>
 
 <div class="layout-2">
 <section class="card tracker" aria-label="Step tracker"><h2>Steps</h2>

@@ -1,14 +1,14 @@
 /* NEXUS game: a deliberate single dark "city at night" look, independent of the page theme. */
-.nexus{--nx-bg:#0a1420;--nx-panel:#101f2e;--nx-line:#1f3448;--nx-ink:#e6f0f5;--nx-muted:#8fa6b5;--nx-cyan:#3fd6c6;--nx-amber:#f2b33d;
---nx-red:#ff6b5e;--nx-green:#5ee08a;--nx-violet:#9d8cff;background:var(--nx-bg);color:var(--nx-ink);border-radius:12px;padding:12px;
+.nexus{--nx-bg:#0a0e19;--nx-panel:#0f1523;--nx-line:rgba(255,255,255,.12);--nx-ink:#f2f5fa;--nx-muted:#a7b0c2;--nx-cyan:#0095ff;--nx-amber:#f6bd4f;
+--nx-red:#ff7d72;--nx-green:#5fd68d;--nx-violet:#e943e9;background:var(--nx-bg);color:var(--nx-ink);border-radius:28px;padding:16px;border:1px solid rgba(255,255,255,.12);box-shadow:0 16px 48px rgba(0,0,0,.45);
 font-variant-numeric:tabular-nums;margin-bottom:24px}
 .nx-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:4px 4px 12px}
-.nx-title{font-weight:800;letter-spacing:.12em;color:var(--nx-cyan)}.nx-title span{letter-spacing:.02em;color:var(--nx-ink);font-weight:600;margin-inline-start:6px}
+.nx-title{font-weight:800;letter-spacing:.14em;background:linear-gradient(120deg,#0095ff,#6a6bf5 55%,#e943e9);-webkit-background-clip:text;background-clip:text;color:transparent}.nx-title span{letter-spacing:.02em;color:var(--nx-ink);font-weight:600;margin-inline-start:6px}
 .nx-stats{display:flex;flex-wrap:wrap;gap:6px}
 .nx-chip{background:var(--nx-panel);border:1px solid var(--nx-line);border-radius:999px;padding:4px 10px;font-size:.88rem;white-space:nowrap}
 .nx-clock.low{border-color:var(--nx-red);color:var(--nx-red)}
 .nx-main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px}
-.nx-mapwrap{background:radial-gradient(circle at 50% 50%,#12283a,#0a1420 70%);border:1px solid var(--nx-line);border-radius:10px;padding:6px;min-width:0}
+.nx-mapwrap{background:#070a13;border:1px solid var(--nx-line);border-radius:22px;padding:6px;min-width:0}
 #nx-map{width:100%;height:auto;display:block}
 .nx-legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--nx-muted);padding:4px 8px}
 .lg{display:inline-block;width:22px;height:0;border-top:3px solid;vertical-align:middle;margin-inline-end:5px}
@@ -24,9 +24,9 @@ font-variant-numeric:tabular-nums;margin-bottom:24px}
 .nx-panel{background:var(--nx-panel);border:1px solid var(--nx-line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0;max-height:760px;overflow:auto}
 .nx-panel h3{margin:0 0 6px;font-size:1rem;color:#fff}.nx-panel p{margin:0 0 6px}
 .nx-muted{color:var(--nx-muted);font-size:.88rem}
-.nx-btn{background:#17324a;color:var(--nx-ink);border:1px solid #2c4d6b;border-radius:8px;padding:8px 10px;font:inherit;font-size:.9rem;cursor:pointer;text-align:start}
+.nx-btn{background:#141b2b;color:var(--nx-ink);border:1px solid rgba(255,255,255,.16);border-radius:14px;box-shadow:none;font-weight:500;padding:8px 10px;font:inherit;font-size:.9rem;cursor:pointer;text-align:start}
 .nx-btn:hover:not(:disabled),.nx-btn:focus{border-color:var(--nx-cyan);outline:none}.nx-btn:disabled{opacity:.45;cursor:not-allowed}
-.nx-btn.primary{background:var(--nx-cyan);color:#062124;border-color:var(--nx-cyan);font-weight:700;text-align:center}
+.nx-btn.primary{background:linear-gradient(120deg,#0095ff,#6a6bf5 55%,#e943e9);color:#fff;border-color:transparent;box-shadow:0 6px 24px rgba(0,149,255,.35);font-weight:700;text-align:center}
 .nx-btn.danger{border-color:var(--nx-red);color:#ffd5d0}
 .nx-actions{display:grid;gap:6px}.nx-actions .cost{float:inline-end;color:var(--nx-muted);font-size:.8rem}
 .nx-diag{display:flex;flex-wrap:wrap;gap:6px}.nx-diag .nx-btn{padding:5px 8px;font-size:.82rem}.nx-diag .nx-btn.on{border-color:var(--nx-violet);background:#2a2550}
@@ -40,7 +40,7 @@ font-variant-numeric:tabular-nums;margin-bottom:24px}
 .nx-end{position:sticky;bottom:0;background:var(--nx-panel);padding-top:4px}
 .nx-overlay[hidden],.nexus [hidden]{display:none!important}
 .nx-overlay{position:fixed;inset:0;background:rgba(3,8,14,.78);display:grid;place-items:center;z-index:50;padding:16px}
-.nx-modal{background:#0f2030;color:var(--nx-ink);border:1px solid #2c4d6b;border-radius:14px;max-width:640px;width:100%;padding:20px;display:grid;gap:12px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.nx-modal{background:#0c111d;color:var(--nx-ink);border:1px solid rgba(255,255,255,.16);border-radius:28px;max-width:640px;width:100%;padding:20px;display:grid;gap:12px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .nx-modal h2{margin:0;color:#fff}.nx-modal.stress{border-color:var(--nx-red);box-shadow:0 0 0 2px rgba(255,107,94,.25),0 20px 60px rgba(0,0,0,.5)}
 .nx-count{display:flex;align-items:center;gap:10px;font-weight:800;color:var(--nx-red);font-size:1.4rem}
 .nx-countbar{flex:1;height:8px;background:#2a1a1a;border-radius:99px;overflow:hidden}.nx-countbar span{display:block;height:100%;background:var(--nx-red);transition:width 1s linear}
@@ -50,3 +50,16 @@ font-variant-numeric:tabular-nums;margin-bottom:24px}
 .nx-outcome b{display:block;font-size:1.3rem;color:var(--nx-cyan)}
 @media (max-width:980px){.nx-main{grid-template-columns:1fr}.nx-panel{max-height:none}}
 @media (prefers-reduced-motion:reduce){.nx-countbar span{transition:none}.edge.built{filter:none}}
+
+/* CDP cinematic touches for the game */
+.nx-btn::after{display:none}
+.edge.built{stroke:#0095ff;filter:drop-shadow(0 0 6px rgba(0,149,255,.8));stroke-dasharray:14 10;animation:flow 1.2s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-24}}
+.nx-modal{animation:nx-pop .45s cubic-bezier(.2,.7,.2,1) both}
+@keyframes nx-pop{from{opacity:0;transform:translateY(14px) scale(.97);filter:blur(4px)}}
+.nx-modal.stress{animation:nx-pop .45s cubic-bezier(.2,.7,.2,1) both,nx-alarm 1.6s ease-in-out .5s infinite}
+@keyframes nx-alarm{50%{box-shadow:0 0 0 2px rgba(255,125,114,.55),0 0 70px rgba(255,125,114,.35)}}
+.node{transition:transform .25s}.node:hover{transform:translateY(-2px)}
+.nx-clock.low{animation:nx-blink 1s steps(2) infinite}@keyframes nx-blink{50%{opacity:.55}}
+.bubble{animation:nx-pop .35s ease both}
+@media (prefers-reduced-motion:reduce){.edge.built,.nx-modal,.nx-modal.stress,.nx-clock.low,.bubble{animation:none}}

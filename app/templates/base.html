@@ -3,15 +3,20 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}CDP Champion Selection{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="/static/style.css">
+<meta name="theme-color" content="#05070d">
 </head>
-<body>
+<body class="{% block bodyclass %}{% endblock %}">
 <a href="#main" class="skip">Skip to content</a>
 {% if ai_mode == "demo" %}<div class="banner demo" role="status"><strong>{{ _("Demo mode") }}:</strong> AI results are <strong>SIMULATED</strong> by a rule-based demo assessor. Add an Anthropic API key for live AI.</div>{% endif %}
 <header class="top"><div class="wrap">
-  <a class="brand" href="{{ '/' if is_lead else '#' }}">CDP Champion Selection</a>
+  <a class="brand" href="{{ '/' if is_lead else '#' }}">
+    <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0095ff"/><stop offset=".55" stop-color="#6a6bf5"/><stop offset="1" stop-color="#e943e9"/></linearGradient></defs>
+      <polygon points="10,2 30,2 40,20 30,38 10,38 0,20" fill="url(#bm)"/><polygon points="14,10 26,10 32,20 26,30 14,30 8,20" fill="#05070d" opacity=".55"/><path d="M14 21l4 4 8-9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="brand-text">Champion Selection<small>Common Digital Platforms</small></span></a>
   <nav aria-label="Main">
-    {% if is_lead %}<a href="/">Dashboard</a><a href="/settings">Settings</a><a href="/audit">Audit trail</a>{% endif %}
+    {% if is_lead %}{% set path = request.url.path %}<a href="/" {{ 'aria-current="page"' if path == "/" or path.startswith("/i/") or path.startswith("/c/") }}>Dashboard</a><a href="/settings" {{ 'aria-current="page"' if path == "/settings" }}>Settings</a><a href="/audit" {{ 'aria-current="page"' if path == "/audit" }}>Audit trail</a>{% endif %}
     {% if lang == "ar" %}<a href="/lang/en" lang="en">English</a>{% else %}<a href="/lang/ar" lang="ar">العربية</a>{% endif %}
     {% if is_lead %}<a href="/logout">Sign out</a>{% endif %}
   </nav>
@@ -22,4 +27,5 @@
   {% block content %}{% endblock %}
 </main>
 <footer>CDP Change Programme · AI results are provisional. Weights, thresholds and fit categories are proposed settings to calibrate in a pilot.</footer>
+<script src="/static/cinema.js" defer></script>
 </body></html>
