@@ -438,3 +438,29 @@ def test_bulk_consent_and_screening_blockers(client):
     client.post(f"/i/{iid}/consent-all", data={"csrf": csrf(client), "confirm": "yes"})
     b = workflow.screening_blockers(iid)
     assert b["no_consent"] == 0 and b["awaiting_cv"] == 2
+
+
+def test_live_call_uses_lightweight_api(monkeypatch):
+    """Live AI calls go to the Messages API in-process (no subprocess) and read the forced tool's JSON."""
+    seen = {}
+
+    class Block:
+        type = "tool_use"
+        input = {"fit_category": "High Fit"}
+
+    class Resp:
+        content = [Block()]
+        stop_reason = "tool_use"
+
+    class Messages:
+        async def create(self, **kw):
+            seen.update(kw)
+            return Resp()
+
+    class Client:
+        messages = Messages()
+    monkeypatch.setattr(ai, "_anthropic", lambda: Client())
+    out = asyncio.run(ai._call_claude("sys", "prompt", ai.CV_SCHEMA))
+    assert out == {"fit_category": "High Fit"}
+    assert seen["tool_choice"] == {"type": "tool", "name": "submit"} and seen["tools"][0]["input_schema"] is ai.CV_SCHEMA
+    assert seen["system"] == "sys" and seen["messages"][0]["content"] == "prompt"

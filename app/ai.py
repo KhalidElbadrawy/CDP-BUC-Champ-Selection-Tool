@@ -1,7 +1,7 @@
 """AI engines: CV screening, two blinded assessment passes, and automated moderation.
 
-LIVE mode uses the Claude Agent SDK on the server (credentials never leave the server).
-Every call is a fresh, tool-less session, so pass A and pass B cannot see each other.
+LIVE mode calls the Anthropic Messages API from the server (credentials never leave the server).
+Every call is a separate, stateless request, so pass A and pass B cannot see each other.
 
 DEMO mode is a deterministic rule-based simulator used when no API key is configured.
 Its results are always stored with mode="demo" and labelled "SIMULATED" in every view.
@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import tempfile
 from typing import Any
 
 from app import config
@@ -119,52 +118,54 @@ CV_SCHEMA = {
 
 
 AI_TIMEOUT_SECONDS = 180
-_AI_SLOTS = asyncio.Semaphore(4)   # bound concurrent CLI sessions during submission bursts
-_SANDBOX_DIR = tempfile.mkdtemp(prefix="cdp-ai-")  # empty cwd: the session cannot see app files
+_AI_SLOTS = asyncio.Semaphore(3)   # bound concurrent AI requests during bursts (e.g. screening many CVs)
+_client = None
+
+
+def _anthropic():
+    """One shared, lightweight API client (no subprocesses), created on first use."""
+    global _client
+    if _client is None:
+        from anthropic import AsyncAnthropic
+        _client = AsyncAnthropic(timeout=AI_TIMEOUT_SECONDS, max_retries=3)
+    return _client
 
 
 async def _call_claude(system: str, prompt: str, schema: dict) -> dict:
-    """One isolated, tool-less Agent SDK session returning schema-validated JSON."""
+    """One independent Messages API request returning JSON that follows `schema`.
+
+    Each call is a separate, stateless request, so the two assessment passes never share context.
+    The model is required to answer through a single 'submit' tool whose input schema is `schema`."""
     try:
-        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+        import anthropic
     except ImportError as e:  # pragma: no cover
-        raise AIError(f"claude-agent-sdk not installed: {e}")
-    options = ClaudeAgentOptions(
-        system_prompt=system,
-        tools=[],                      # no built-in tools: pure reasoning over provided evidence
-        allowed_tools=[],
-        setting_sources=[],            # do not load any local CLAUDE.md / settings
-        cwd=_SANDBOX_DIR,
-        max_turns=4,
-        model=config.settings.model,
-        output_format={"type": "json_schema", "schema": schema},
-    )
-
-    async def run() -> Any:
-        # Consume the whole stream (no early return/raise) so the SDK can close its session cleanly.
-        found: Any = None
-        error: str | None = None
-        async for msg in query(prompt=prompt, options=options):
-            if isinstance(msg, ResultMessage):
-                if msg.is_error:
-                    detail = "; ".join(msg.errors or []) or (msg.result or "") or msg.subtype
-                    status = f" (HTTP {msg.api_error_status})" if msg.api_error_status else ""
-                    error = f"AI service error{status}: {detail}"[:500]
-                else:
-                    found = msg.structured_output   # --json-schema contract: no free-text fallback
-        if error:
-            raise AIError(error)
-        return found
-
+        raise AIError(f"anthropic package not installed: {e}")
+    tool = {"name": "submit", "description": "Submit the structured result.", "input_schema": schema}
     try:
         async with _AI_SLOTS:
-            result = await asyncio.wait_for(run(), timeout=AI_TIMEOUT_SECONDS)
-    except AIError:
-        raise
-    except asyncio.TimeoutError:
+            resp = await _anthropic().messages.create(
+                model=config.settings.model,
+                max_tokens=8000,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "submit"},
+            )
+    except anthropic.AuthenticationError:
+        raise AIError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in the hosting settings.")
+    except anthropic.RateLimitError:
+        raise AIError("The AI service is busy (rate limit). The work is saved; try again shortly.")
+    except anthropic.APIStatusError as e:
+        raise AIError(f"AI service error (HTTP {e.status_code}): {str(e)[:300]}")
+    except anthropic.APITimeoutError:
         raise AIError(f"AI service timed out after {AI_TIMEOUT_SECONDS}s")
+    except anthropic.APIConnectionError as e:
+        raise AIError(f"Could not reach the AI service: {e}"[:400])
     except Exception as e:
         raise AIError(f"AI service unavailable: {type(e).__name__}: {e}"[:500])
+    result = next((b.input for b in resp.content if getattr(b, "type", "") == "tool_use"), None)
+    if resp.stop_reason == "max_tokens":
+        raise AIError("The AI response was cut off before it finished.")
     if not isinstance(result, dict):
         raise AIError("AI service returned no structured result.")
     return result
