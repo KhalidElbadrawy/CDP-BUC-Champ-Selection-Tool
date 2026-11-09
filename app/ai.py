@@ -131,25 +131,41 @@ def _anthropic():
     return _client
 
 
-async def _call_claude(system: str, prompt: str, schema: dict) -> dict:
-    """One independent Messages API request returning JSON that follows `schema`.
+def _structured(schema: Any) -> Any:
+    """Adapt a schema for structured outputs: every object lists all its properties as required and allows no
+    extra keys; nullable type lists become anyOf. The response normalisers still tolerate empty values."""
+    if isinstance(schema, list):
+        return [_structured(x) for x in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: _structured(v) for k, v in schema.items()}
+    t = out.get("type")
+    if isinstance(t, list):
+        rest = {k: v for k, v in out.items() if k != "type"}
+        return {"anyOf": [{"type": x, **(rest if x != "null" else {})} for x in t]}
+    if t == "object":
+        props = out.get("properties", {})
+        out["required"] = list(props)
+        out["additionalProperties"] = False
+    return out
 
-    Each call is a separate, stateless request, so the two assessment passes never share context.
-    The model is required to answer through a single 'submit' tool whose input schema is `schema`."""
+
+async def _call_claude(system: str, prompt: str, schema: dict) -> dict:
+    """One independent Messages API request whose reply is JSON constrained to `schema` (structured outputs).
+
+    Each call is a separate, stateless request, so the two assessment passes never share context."""
     try:
         import anthropic
     except ImportError as e:  # pragma: no cover
         raise AIError(f"anthropic package not installed: {e}")
-    tool = {"name": "submit", "description": "Submit the structured result.", "input_schema": schema}
     try:
         async with _AI_SLOTS:
             resp = await _anthropic().messages.create(
                 model=config.settings.model,
-                max_tokens=8000,
+                max_tokens=16000,
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "submit"},
+                output_config={"format": {"type": "json_schema", "schema": _structured(schema)}},
             )
     except anthropic.AuthenticationError:
         raise AIError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in the hosting settings.")
@@ -163,9 +179,15 @@ async def _call_claude(system: str, prompt: str, schema: dict) -> dict:
         raise AIError(f"Could not reach the AI service: {e}"[:400])
     except Exception as e:
         raise AIError(f"AI service unavailable: {type(e).__name__}: {e}"[:500])
-    result = next((b.input for b in resp.content if getattr(b, "type", "") == "tool_use"), None)
+    if resp.stop_reason == "refusal":
+        raise AIError("The AI service declined to assess this material.")
     if resp.stop_reason == "max_tokens":
         raise AIError("The AI response was cut off before it finished.")
+    text = next((b.text for b in resp.content if getattr(b, "type", "") == "text"), None)
+    try:
+        result = json.loads(text) if text else None
+    except json.JSONDecodeError:
+        raise AIError("The AI service returned an invalid structured result.")
     if not isinstance(result, dict):
         raise AIError("AI service returned no structured result.")
     return result

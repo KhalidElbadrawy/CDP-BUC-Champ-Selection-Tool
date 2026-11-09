@@ -440,17 +440,17 @@ def test_bulk_consent_and_screening_blockers(client):
     assert b["no_consent"] == 0 and b["awaiting_cv"] == 2
 
 
-def test_live_call_uses_lightweight_api(monkeypatch):
-    """Live AI calls go to the Messages API in-process (no subprocess) and read the forced tool's JSON."""
+def test_live_call_uses_structured_outputs(monkeypatch):
+    """Live AI calls go to the Messages API in-process with structured outputs (no forced tool use)."""
     seen = {}
 
     class Block:
-        type = "tool_use"
-        input = {"fit_category": "High Fit"}
+        type = "text"
+        text = '{"fit_category": "High Fit"}'
 
     class Resp:
         content = [Block()]
-        stop_reason = "tool_use"
+        stop_reason = "end_turn"
 
     class Messages:
         async def create(self, **kw):
@@ -460,7 +460,20 @@ def test_live_call_uses_lightweight_api(monkeypatch):
     class Client:
         messages = Messages()
     monkeypatch.setattr(ai, "_anthropic", lambda: Client())
-    out = asyncio.run(ai._call_claude("sys", "prompt", ai.CV_SCHEMA))
+    out = asyncio.run(ai._call_claude("sys", "prompt", ai.PASS_SCHEMA))
     assert out == {"fit_category": "High Fit"}
-    assert seen["tool_choice"] == {"type": "tool", "name": "submit"} and seen["tools"][0]["input_schema"] is ai.CV_SCHEMA
-    assert seen["system"] == "sys" and seen["messages"][0]["content"] == "prompt"
+    assert "tool_choice" not in seen and "tools" not in seen
+    fmt = seen["output_config"]["format"]
+    assert fmt["type"] == "json_schema"
+
+    def walk(node):  # every object forbids extra keys and requires all its properties; no type lists remain
+        if isinstance(node, dict):
+            assert not isinstance(node.get("type"), list)
+            if node.get("type") == "object":
+                assert node["additionalProperties"] is False and set(node["required"]) == set(node.get("properties", {}))
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(fmt["schema"])
