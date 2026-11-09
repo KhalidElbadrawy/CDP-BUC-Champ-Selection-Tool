@@ -410,3 +410,31 @@ def test_cannot_switch_to_written_after_starting_game(client):
     assert r.status_code == 200 and r.json()["phase"] == "intro"
     workflow.game_reset(workflow.cand(c["id"]))
     assert workflow.game_load(c["id"])[0] is None
+
+
+def test_cv_matching_handles_real_file_names():
+    iid = workflow.create_initiative("Match Test")
+    workflow.import_records(iid, [
+        dict(name="Ahmed Mohamed Al Mansoori", entity="E", email="ahmed.mansoori@x.gov", consent=True, row_number=2),
+        dict(name="Fatima Hassan Al Zaabi", entity="E", email="f.alzaabi@x.gov", consent=True, row_number=3),
+        dict(name="Ahmed Saeed", entity="E", email="ahmed.saeed@x.gov", consent=True, row_number=4)])
+    r = workflow.match_scores(iid, ["Ahmed_Mansoori_CV_final.pdf", "CV - Fatima Al Zaabi.docx", "Ahmed CV.pdf", "resume.pdf"])
+    ids = {c["name"]: c["id"] for c in db.q("SELECT id, name FROM candidates WHERE initiative_id=?", (iid,))}
+    assert r["Ahmed_Mansoori_CV_final.pdf"]["match"] == ids["Ahmed Mohamed Al Mansoori"]
+    assert r["CV - Fatima Al Zaabi.docx"]["match"] == ids["Fatima Hassan Al Zaabi"]
+    assert r["Ahmed CV.pdf"]["match"] is None and r["Ahmed CV.pdf"]["suggest"] is None   # two Ahmeds: ask the Change Lead
+    assert r["resume.pdf"]["match"] is None
+
+
+def test_bulk_consent_and_screening_blockers(client):
+    login(client)
+    iid = workflow.create_initiative("Consent Test")
+    workflow.import_records(iid, [dict(name="No Consent One", entity="E", consent=False, row_number=2),
+                                  dict(name="No Consent Two", entity="E", consent=False, row_number=3)])
+    assert workflow.screening_blockers(iid)["no_consent"] == 2
+    assert "Why nothing is ready" in client.get(f"/i/{iid}").text
+    r = client.post(f"/i/{iid}/consent-all", data={"csrf": csrf(client)})
+    assert "Tick the box" in r.text and workflow.screening_blockers(iid)["no_consent"] == 2
+    client.post(f"/i/{iid}/consent-all", data={"csrf": csrf(client), "confirm": "yes"})
+    b = workflow.screening_blockers(iid)
+    assert b["no_consent"] == 0 and b["awaiting_cv"] == 2

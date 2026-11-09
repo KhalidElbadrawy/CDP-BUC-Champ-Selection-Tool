@@ -6,10 +6,12 @@
 {% for d in done %}<tr><td class="small">{{ d.file }}</td><td>{{ d.name }}</td><td>{% if d.status == "ok" %}<span class="pill ok">text read</span>{% else %}<span class="pill warn">{{ d.status }}</span> <span class="small">{{ d.error }}</span>{% endif %}</td></tr>
 {% else %}<tr><td colspan="3">None.</td></tr>{% endfor %}</tbody></table></div></div>
 {% if unmatched %}<form method="post" action="/i/{{ i.id }}/cvs/assign" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
-<h2>Not matched ({{ unmatched|length }})</h2><p class="small muted">Choose the nominee for each file, or leave it blank to skip.</p>
+<h2>Choose the nominee for these files ({{ unmatched|length }})</h2>
+{% if not people %}<div class="flash err">This initiative has no nominees yet. Import the survey results (step 2) first, then upload the CVs again.</div>
+{% else %}<p>These files could not be matched with certainty. <strong>Pick the right nominee for each file</strong>, then click <em>Assign CVs</em>. Suggested matches are pre-selected; check them.</p>{% endif %}
 <div class="table-wrap"><table><thead><tr><th>File</th><th>Nominee</th></tr></thead><tbody>
 {% for u in unmatched %}<tr><td class="small">{{ u.file }}<input type="hidden" name="name_{{ u.key }}" value="{{ u.file }}"></td>
-<td><select name="assign_{{ u.key }}" aria-label="Nominee for {{ u.file }}"><option value="">— skip —</option>{% for p in people %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></td></tr>{% endfor %}
+<td><select name="assign_{{ u.key }}" aria-label="Nominee for {{ u.file }}"><option value="">— skip this file —</option>{% for p in people %}<option value="{{ p.id }}" {{ "selected" if p.id == u.suggest }}>{{ p.name }}{{ " (suggested)" if p.id == u.suggest }}</option>{% endfor %}</select></td></tr>{% endfor %}
 </tbody></table></div><div class="actions"><button>Assign CVs</button></div></form>{% endif %}
 <p><a class="btn" href="/i/{{ i.id }}">Back to the initiative</a></p>
 {% endblock %}

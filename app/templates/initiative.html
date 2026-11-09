@@ -35,12 +35,23 @@
 <input type="file" name="file" accept=".xlsx,.csv" required aria-label="Survey export file"><div class="actions"><button>Upload survey file</button></div></form></section>
 
 <section class="card"><h2>Step 3 · Upload CVs</h2>
-<p class="small muted">Select many files at once. Files are matched to nominees by the name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>); you can assign any that don't match.</p>
+<p class="small muted">Select many files at once. Files are matched to nominees by name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>; two parts of the name are enough). On the next page, pick the nominee for any file that wasn't matched.</p>
 <form method="post" action="/i/{{ i.id }}/cvs" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="file" name="files" accept=".pdf,.docx" multiple required aria-label="CV files"><div class="actions"><button>Upload CVs</button></div></form></section>
 
 <section class="card"><h2>Step 4 · AI fit rating</h2>
 <p class="small muted">{{ eligible }} CV(s) ready to screen. Only nominees with recorded consent are screened. High and Moderate Fit are shortlisted automatically; you can change any category with a reason on the nominee's page.</p>
+{% if not eligible %}<div class="notice small"><strong>Why nothing is ready:</strong>
+{% if not blockers.total %} no nominees yet. Import the survey results first (step 2).
+{% else %}<ul style="margin:4px 0 0">
+{% if blockers.no_consent %}<li>{{ blockers.no_consent }} nominee(s) have no consent recorded (status <em>No Consent</em>).</li>{% endif %}
+{% if blockers.awaiting_cv %}<li>{{ blockers.awaiting_cv }} nominee(s) have no CV yet (step 3).</li>{% endif %}
+{% if blockers.unreadable %}<li>{{ blockers.unreadable }} CV(s) could not be read; upload a text-based PDF or Word file on the nominee's page.</li>{% endif %}
+{% if blockers.screened %}<li>{{ blockers.screened }} nominee(s) are already rated.</li>{% endif %}</ul>{% endif %}</div>{% endif %}
+{% if blockers.no_consent %}<details><summary>Record consent for all {{ blockers.no_consent }} nominee(s) without it</summary>
+<form method="post" action="/i/{{ i.id }}/consent-all"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label class="radio"><input type="checkbox" name="confirm" value="yes" required> I confirm these nominees agreed to AI screening of their CV (for example by email or in a meeting).</label>
+<div class="actions"><button class="secondary small">Record consent</button></div></form></details>{% endif %}
 <form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>Run AI fit rating</button></form></section>
 
 <section class="card"><h2>Step 6 · Send assessment links</h2>

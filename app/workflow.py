@@ -162,15 +162,57 @@ def _tokens(text: str) -> set[str]:
     return {t for t in re.split(r"[^a-z؀-ۿ]+", text.lower()) if len(t) >= 2}
 
 
-def match_files(iid: int, filenames: list[str]) -> dict[str, int | None]:
-    """Match each file to exactly one nominee whose every name part appears in the filename."""
-    people = db.q("SELECT id, name FROM candidates WHERE initiative_id=? AND status!='Withdrawn'", (iid,))
+IGNORE_TOKENS = {"cv", "resume", "final", "updated", "copy", "new", "version", "al", "el", "bin", "bint", "ibn", "abu",
+                 "the", "of", "mr", "mrs", "ms", "dr", "eng", "profile", "doc", "pdf", "docx"}
+
+
+def _name_tokens(text: str) -> set[str]:
+    return {t for t in _tokens(text) if t not in IGNORE_TOKENS and not t.isdigit()}
+
+
+def match_scores(iid: int, filenames: list[str]) -> dict[str, dict]:
+    """For each file: a confident match (auto-assigned) and/or a best-guess suggestion for the Change Lead to confirm.
+
+    A file matches a nominee when at least two parts of their name (or their email name) appear in the file name,
+    or every meaningful part of a one-word name does, and no other nominee scores as high."""
+    people = db.q("SELECT id, name, email FROM candidates WHERE initiative_id=? AND status!='Withdrawn'", (iid,))
     out = {}
     for fn in filenames:
-        ft = _tokens(Path(fn).stem)
-        hits = [p["id"] for p in people if _tokens(p["name"]) and _tokens(p["name"]) <= ft]
-        out[fn] = hits[0] if len(hits) == 1 else None
+        ft = _name_tokens(Path(fn).stem)
+        scored = []
+        for p in people:
+            nt = _name_tokens(p["name"]) | _name_tokens((p["email"] or "").split("@")[0].replace(".", " "))
+            hits = len(nt & ft)
+            full = bool(_name_tokens(p["name"])) and _name_tokens(p["name"]) <= ft
+            if hits:
+                scored.append((hits + (1 if full else 0), full, p["id"]))
+        scored.sort(reverse=True)
+        best = scored[0] if scored else None
+        unique = best and (len(scored) == 1 or scored[1][0] < best[0])
+        confident = bool(best and unique and (best[0] >= 2 or best[1]))
+        out[fn] = {"match": best[2] if confident else None,
+                   "suggest": best[2] if best and unique else None}
     return out
+
+
+def match_files(iid: int, filenames: list[str]) -> dict[str, int | None]:
+    return {fn: r["match"] for fn, r in match_scores(iid, filenames).items()}
+
+
+def record_consent_all(iid: int) -> int:
+    rows = db.q("SELECT id FROM candidates WHERE initiative_id=? AND status='No Consent'", (iid,))
+    for r in rows:
+        record_consent(cand(r["id"]))
+    db.audit("consent.bulk", actor="lead", initiative_id=iid, count=len(rows))
+    return len(rows)
+
+
+def screening_blockers(iid: int) -> dict:
+    rows = db.q("SELECT status FROM candidates WHERE initiative_id=? AND status!='Withdrawn'", (iid,))
+    count = lambda *st: sum(1 for r in rows if r["status"] in st)
+    return {"total": len(rows), "no_consent": count("No Consent"), "awaiting_cv": count("Awaiting CV"),
+            "unreadable": count("CV Unreadable"), "ready": count("CV Uploaded"),
+            "screened": len(rows) - count("No Consent", "Awaiting CV", "CV Unreadable", "CV Uploaded")}
 
 
 def upload_cv(c: dict, filename: str, data: bytes) -> dict:

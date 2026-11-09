@@ -227,6 +227,7 @@ def initiative(iid: int, request: Request):
     eligible = db.q1("SELECT COUNT(*) n FROM candidates WHERE initiative_id=? AND status='CV Uploaded' AND consent_screening=1", (iid,))["n"]
     shortlisted = db.q1("SELECT COUNT(*) n FROM candidates WHERE initiative_id=? AND status IN ('Shortlisted','Invited','In Assessment','Follow-up Requested')", (iid,))["n"]
     return render(request, "initiative.html", i=i, steps=workflow.step_progress(iid), cands=cands, status=status,
+                  blockers=workflow.screening_blockers(iid),
                   eligible=eligible, shortlisted=shortlisted, statuses=workflow.STATUSES)
 
 
@@ -341,18 +342,18 @@ async def cv_bulk(iid: int, request: Request):
     files = [u for u in f.getlist("files") if getattr(u, "filename", "")]
     if not files:
         return back(f"/i/{iid}", err="Choose one or more CV files (PDF or DOCX).")
-    matches = workflow.match_files(iid, [u.filename for u in files])
+    scores = workflow.match_scores(iid, [u.filename for u in files])
     done, unmatched = [], []
     for u in files:
         data = await u.read()
-        cid = matches[u.filename]
+        cid = scores[u.filename]["match"]
         if cid:
             res = workflow.upload_cv(workflow.cand(cid), u.filename, data)
             done.append({"file": u.filename, "name": workflow.cand(cid)["name"], **res})
         else:
             key = secrets.token_hex(10)
             (_staging() / f"{key}.bin").write_bytes(data)
-            unmatched.append({"file": u.filename, "key": key})
+            unmatched.append({"file": u.filename, "key": key, "suggest": scores[u.filename]["suggest"]})
     people = db.q("SELECT id, name FROM candidates WHERE initiative_id=? AND status!='Withdrawn' ORDER BY name", (iid,))
     return render(request, "cv_results.html", i=i, done=done, unmatched=unmatched, people=people)
 
@@ -374,7 +375,25 @@ async def cv_assign(iid: int, request: Request):
         workflow.upload_cv(c, f.get(f"name_{key}") or "cv.pdf", path.read_bytes())
         path.unlink(missing_ok=True)
         assigned += 1
-    return back(f"/i/{iid}", msg=f"{assigned} CV(s) assigned.")
+    skipped = sum(1 for k, v in f.items() if k.startswith("assign_") and not v)
+    if not assigned:
+        return back(f"/i/{iid}", err="No CVs were assigned: no nominee was chosen for the files. Upload them again and pick "
+                                     "the nominee for each file on the next page.")
+    msg = f"{assigned} CV(s) assigned."
+    if skipped:
+        msg += f" {skipped} file(s) were skipped; upload them again to assign them."
+    return back(f"/i/{iid}", msg=msg)
+
+
+@app.post("/i/{iid}/consent-all")
+async def consent_all(iid: int, request: Request):
+    lead(request)
+    get_init(iid)
+    f = await form(request)
+    if f.get("confirm") != "yes":
+        return back(f"/i/{iid}", err="Tick the box to confirm these nominees agreed to AI screening.")
+    n = workflow.record_consent_all(iid)
+    return back(f"/i/{iid}", msg=f"Consent recorded for {n} nominee(s).")
 
 
 @app.post("/i/{iid}/screen")
