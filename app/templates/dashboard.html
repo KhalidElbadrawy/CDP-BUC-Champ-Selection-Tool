@@ -14,10 +14,10 @@
 <div class="kpis">
   <div class="stat"><div class="n">{{ d.entities }}</div><div class="l">Entities</div></div>
   <div class="stat"><div class="n">{{ d.champions }}</div><div class="l">Champions nominated</div></div>
-  <div class="stat fit-ok"><div class="n">{{ d.by_cat["High Fit"] }}</div><div class="l">High Fit</div></div>
-  <div class="stat fit-info"><div class="n">{{ d.by_cat["Moderate Fit"] }}</div><div class="l">Moderate Fit</div></div>
-  <div class="stat fit-warn"><div class="n">{{ d.by_cat["Low Fit"] }}</div><div class="l">Low Fit</div></div>
-  <div class="stat fit-bad"><div class="n">{{ d.by_cat["Doesn't Fit"] }}</div><div class="l">Doesn't Fit</div></div>
+  <div class="stat fit-ok"><div class="n">{{ d.by_cat["High Fit"] }}</div><div class="l">{{ m.fit_dots("High Fit") }} High Fit</div></div>
+  <div class="stat fit-info"><div class="n">{{ d.by_cat["Moderate Fit"] }}</div><div class="l">{{ m.fit_dots("Moderate Fit") }} Moderate Fit</div></div>
+  <div class="stat fit-warn"><div class="n">{{ d.by_cat["Low Fit"] }}</div><div class="l">{{ m.fit_dots("Low Fit") }} Low Fit</div></div>
+  <div class="stat fit-bad"><div class="n">{{ d.by_cat["Doesn't Fit"] }}</div><div class="l">{{ m.fit_dots("Doesn't Fit") }} Doesn't Fit</div></div>
   <div class="stat stat-strong"><svg class="stat-emblem" viewBox="0 0 40 40" aria-hidden="true"><polygon points="10,2 30,2 40,20 30,38 10,38 0,20" fill="rgba(255,255,255,.22)"/><path d="M13 21l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="n">{{ d.approved }}</div><div class="l">Approved champions</div></div>
 </div>
 {% if d.by_cat["Not yet rated"] %}<p class="muted small">{{ d.by_cat["Not yet rated"] }} nominee(s) not yet rated.</p>{% endif %}

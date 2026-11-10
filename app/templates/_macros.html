@@ -1,5 +1,12 @@
+{% set FIT_LEVELS = {'High Fit': (4, 'ok', 'High'), 'Moderate Fit': (3, 'info', 'Moderate'), 'Low Fit': (2, 'warn', 'Low'), "Doesn't Fit": (1, 'bad', "Doesn't fit")} %}
+{% macro fit_dots(f) -%}
+{%- set lv = FIT_LEVELS.get(f) -%}
+{%- if lv -%}<span class="dots {{ lv[1] }}" aria-hidden="true">{% for i in range(4) %}<i class="{{ 'on' if i < lv[0] }}"></i>{% endfor %}</span>{%- endif -%}
+{%- endmacro %}
 {% macro fit_pill(f) -%}
-{%- if f -%}<span class="pill {{ {'High Fit':'ok','Moderate Fit':'info','Low Fit':'warn',"Doesn't Fit":'bad'}.get(f,'') }}">{{ f }}</span>{%- else -%}<span class="muted small">Not yet rated</span>{%- endif -%}
+{%- set lv = FIT_LEVELS.get(f) -%}
+{%- if lv -%}<span class="fit {{ lv[1] }}" role="img" aria-label="{{ f }}: {{ lv[0] }} of 4" title="{{ f }} ({{ lv[0] }} of 4)">{{ fit_dots(f) }}<span class="fit-l">{{ lv[2] }}</span></span>
+{%- elif f -%}<span class="pill">{{ f }}</span>{%- else -%}<span class="muted small">Not yet rated</span>{%- endif -%}
 {%- endmacro %}
 {% macro status_pill(s) -%}
 <span class="pill {{ {'Approved':'ok','Assessed':'info','Shortlisted':'info','Not Approved':'bad','Not Shortlisted':'bad','Withdrawn':'bad','No Consent':'warn','CV Unreadable':'warn','Follow-up Requested':'warn'}.get(s,'') }}">{{ s }}</span>

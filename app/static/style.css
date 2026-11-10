@@ -145,6 +145,16 @@ table.num tfoot th, table.num tfoot td { background: rgba(0,149,255,.08); font-w
 .pill.warn { background: var(--soft-warn); color: var(--warn); border-color: rgba(246,189,79,.35); }
 .pill.bad { background: var(--soft-bad); color: var(--bad); border-color: rgba(255,125,114,.35); }
 .pill.info { background: var(--soft-info); color: var(--info); border-color: rgba(77,181,255,.35); }
+/* CV fit as a 4-dot rating: High 4, Moderate 3, Low 2, Doesn't fit 1 */
+.fit { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: .8rem; font-weight: 700; vertical-align: middle; }
+.dots { display: inline-flex; gap: 4px; vertical-align: middle; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.dots i.on { background: currentColor; box-shadow: 0 0 8px currentColor; animation: dot-on .45s cubic-bezier(.2,.8,.2,1) both; }
+.dots i.on:nth-child(2) { animation-delay: .07s; } .dots i.on:nth-child(3) { animation-delay: .14s; } .dots i.on:nth-child(4) { animation-delay: .21s; }
+@keyframes dot-on { from { transform: scale(.2); opacity: 0; } }
+.fit.ok, .dots.ok { color: var(--ok); } .fit.info, .dots.info { color: var(--info); }
+.fit.warn, .dots.warn { color: var(--warn); } .fit.bad, .dots.bad { color: var(--bad); }
+.stat .l .dots { display: flex; width: max-content; margin: 0 0 7px; }
 .pill.sim { background: rgba(233,67,233,.16); color: #f6a8f6; border-color: rgba(233,67,233,.4); }
 .flash { padding: 13px 18px; border-radius: 16px; margin-bottom: 16px; border: 1px solid; backdrop-filter: var(--glass-blur); }
 .flash.ok { background: var(--soft-ok); border-color: rgba(95,214,141,.4); color: #d6f7e2; }
