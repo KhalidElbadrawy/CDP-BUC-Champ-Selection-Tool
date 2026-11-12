@@ -559,3 +559,131 @@ def test_lead_screens_fully_in_arabic(client):
     assert "تم استيراد 3 من المرشحين" in r.text
     client.cookies.set("lang", "en")
     assert "Champions nominated" in client.get("/").text
+
+
+# ------------------------------------------------------------------ Invite button (email)
+import smtplib  # noqa: E402
+from urllib.parse import parse_qs, urlparse  # noqa: E402
+
+from app import production  # noqa: E402
+
+
+class FakeSMTP:
+    """Stands in for the mail server: records what would be sent."""
+    sent: list = []
+    fail: str | None = None
+
+    def __init__(self, host, port, timeout=None):
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context=None):
+        self.calls.append("starttls")
+
+    def login(self, user, password):
+        if FakeSMTP.fail == "auth":
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+    def send_message(self, msg):
+        FakeSMTP.sent.append(msg)
+
+
+@pytest.fixture
+def smtp(monkeypatch):
+    FakeSMTP.sent, FakeSMTP.fail = [], None
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(config.settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(config.settings, "smtp_user", "champions@t.gov")
+    monkeypatch.setattr(config.settings, "smtp_password", "x")
+    monkeypatch.setattr(config.settings, "smtp_from", "champions@t.gov")
+    return FakeSMTP
+
+
+def press_invite(client, c, nxt="initiative"):
+    return client.post(f"/c/{c['id']}/invite", data={"csrf": csrf(client), "next": nxt}, follow_redirects=False)
+
+
+def token_in(text):
+    return re.search(r"/a/([A-Za-z0-9_-]{20,})", text).group(1)
+
+
+def test_invite_button_emails_a_personal_link(client, smtp):
+    login(client)
+    c = fresh_candidate("Lina Live", "high")
+    assert c["status"] == "Shortlisted"
+    assert 'action="/c/%d/invite"' % c["id"] in client.get(f"/i/{c['initiative_id']}").text
+    r = press_invite(client, c)
+    loc = r.headers["location"]
+    assert loc.startswith(f"/i/{c['initiative_id']}?msg=Invitation%20emailed") and loc.endswith("#nominees")
+    msg = smtp.sent[0]
+    assert msg["To"] == "lina@t.gov" and "champions@t.gov" in msg["From"]
+    body = msg.get_body(("plain",)).get_content()
+    assert "LAUNCH WINDOW" in body and "نافذة الإطلاق" in body and "Lina Live" in body
+    first = token_in(body)
+    assert token_in(msg.get_body(("html",)).get_content()) == first
+    assert security.resolve(first)
+    assert workflow.cand(c["id"])["status"] == "Invited"
+    e = workflow.last_invite(c["id"])
+    assert e["status"] == "sent" and first not in e["body_text"]  # the working link is never stored
+    # resend: Arabic first for a Change Lead using Arabic; the new link works and the old one stops
+    client.cookies.set("lang", "ar")
+    press_invite(client, workflow.cand(c["id"]), nxt="")
+    client.cookies.set("lang", "en")
+    assert smtp.sent[1]["Subject"].startswith("دعوتك")
+    second = token_in(smtp.sent[1].get_body(("plain",)).get_content())
+    assert security.resolve(second)
+    with pytest.raises(security.LinkError):
+        security.resolve(first)
+    assert "Emailed" in client.get(f"/i/{c['initiative_id']}").text
+
+
+def test_failed_invite_keeps_the_earlier_link(client, smtp):
+    login(client)
+    c = fresh_candidate("Faris Fail", "high")
+    old = token_in(workflow.invite(c))
+    smtp.fail = "auth"
+    r = press_invite(client, workflow.cand(c["id"]))
+    assert "err=" in r.headers["location"]
+    assert "refused the sign-in" in client.get(r.headers["location"]).text
+    assert security.resolve(old)  # still works
+    assert workflow.last_invite(c["id"])["status"] == "failed"
+    assert db.q1("SELECT COUNT(*) n FROM tokens WHERE candidate_id=? AND revoked_at IS NULL", (c["id"],))["n"] == 1
+
+
+def test_invite_without_email_server_outside_production_saves_it(client):
+    login(client)
+    c = fresh_candidate("Ivy Demo", "high")
+    r = press_invite(client, c)
+    link = parse_qs(urlparse(r.headers["location"]).query)["link"][0]
+    assert security.resolve(token_in(link))
+    assert workflow.cand(c["id"])["status"] == "Invited"
+    assert workflow.last_invite(c["id"])["status"] == "demo"
+    page = client.get(r.headers["location"]).text
+    assert "Saved, not sent" in page and "nothing was sent" in page
+    workflow.clear_initiative(c["initiative_id"], True)  # invitation records go with the nominee
+    assert not db.q1("SELECT 1 FROM emails WHERE candidate_id=?", (c["id"],))
+
+
+def test_invite_rules(client, monkeypatch, smtp):
+    login(client)
+    c = fresh_candidate("Nora Rules", "high")
+    db.ex("UPDATE candidates SET email=NULL WHERE id=?", (c["id"],))
+    assert "no email address" in client.get(press_invite(client, workflow.cand(c["id"])).headers["location"]).text
+    db.ex("UPDATE candidates SET email='nora@t.gov' WHERE id=?", (c["id"],))
+    workflow.set_step(c["initiative_id"], 6, True)
+    r = press_invite(client, workflow.cand(c["id"]))
+    assert "Step 6 is marked complete" in client.get(r.headers["location"]).text and not smtp.sent
+    workflow.set_step(c["initiative_id"], 6, False)
+    low = fresh_candidate("Omar Low", "low")
+    with pytest.raises(workflow.WorkflowError):
+        asyncio.run(workflow.email_invite(low))
+    monkeypatch.setattr(config.settings, "smtp_host", "")
+    monkeypatch.setattr(production, "is_production", lambda: True)
+    with pytest.raises(workflow.WorkflowError, match="isn't set up"):
+        asyncio.run(workflow.email_invite(workflow.cand(c["id"])))
+    assert workflow.cand(c["id"])["status"] == "Shortlisted" and not smtp.sent

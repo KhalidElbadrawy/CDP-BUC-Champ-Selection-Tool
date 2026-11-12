@@ -37,3 +37,16 @@ services:
         sync: false               # the Change Lead's sign-in password (10+ characters)
       - key: CDP_BASE_URL
         sync: false               # e.g. https://cdp-champion-tool.onrender.com
+      # --- email, for the Invite buttons (leave out to send links yourself from the downloaded list) ---
+      - key: SMTP_HOST
+        sync: false               # e.g. smtp.office365.com (Microsoft 365) or smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false               # the mailbox that sends, e.g. cdp-champions@your-org.gov
+      - key: SMTP_PASSWORD
+        sync: false               # that mailbox's password or app password: typed into Render only
+      - key: SMTP_FROM
+        sync: false               # the sender address shown to nominees (usually the same mailbox)
+      - key: CDP_LEAD_EMAIL
+        sync: false               # nominees' replies go here

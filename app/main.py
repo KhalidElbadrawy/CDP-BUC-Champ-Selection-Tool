@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import ai, config, db, imports, production, scoring, security, workflow
+from app import ai, config, db, imports, mailer, production, scoring, security, workflow
 from app.i18n import html_translator, translator
 from app.workflow import WorkflowError
 
@@ -73,12 +73,13 @@ def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLRe
 
 
 def back(url: str, msg: str | None = None, err: str | None = None) -> RedirectResponse:
+    url, _, fragment = url.partition("#")  # the message goes in the query, before any #fragment
     sep = "&" if "?" in url else "?"
     if msg:
         url += f"{sep}msg={quote(msg)}"
     elif err:
         url += f"{sep}err={quote(err)}"
-    return RedirectResponse(url, status_code=303)
+    return RedirectResponse(url + (f"#{fragment}" if fragment else ""), status_code=303)
 
 
 async def form(request: Request) -> dict:
@@ -224,11 +225,13 @@ def initiative(iid: int, request: Request):
     cands = db.q(sql + " ORDER BY e.name, c.name", args)
     for c in cands:
         c["has_link"] = bool(db.q1("SELECT 1 FROM tokens WHERE candidate_id=? AND revoked_at IS NULL AND expires_at>?", (c["id"], db.now())))
+        c["last_invite"] = workflow.last_invite(c["id"])
     eligible = db.q1("SELECT COUNT(*) n FROM candidates WHERE initiative_id=? AND status='CV Uploaded' AND consent_screening=1", (iid,))["n"]
     shortlisted = db.q1("SELECT COUNT(*) n FROM candidates WHERE initiative_id=? AND status IN ('Shortlisted','Invited','In Assessment','Follow-up Requested')", (iid,))["n"]
     return render(request, "initiative.html", i=i, steps=workflow.step_progress(iid), cands=cands, status=status,
                   blockers=workflow.screening_blockers(iid),
-                  eligible=eligible, shortlisted=shortlisted, statuses=workflow.STATUSES)
+                  eligible=eligible, shortlisted=shortlisted, statuses=workflow.STATUSES, mail=mailer.summary(),
+                  production=production.is_production(), step6_done=bool(step_locked(iid, 6)))
 
 
 @app.post("/i/{iid}/step/{no}")
@@ -473,6 +476,8 @@ def candidate_ctx(c: dict) -> dict:
         link=db.q1("SELECT * FROM tokens WHERE candidate_id=? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1", (c["id"],)),
         audit=db.q("SELECT * FROM audit WHERE candidate_id=? ORDER BY id DESC LIMIT 150", (c["id"],)),
         game=db.q1("SELECT * FROM game_sessions WHERE candidate_id=?", (c["id"],)),
+        invites=db.q("SELECT * FROM emails WHERE candidate_id=? AND kind='invite' ORDER BY id DESC", (c["id"],)),
+        mail=mailer.summary(), production=production.is_production(), step6_done=bool(step_locked(c["initiative_id"], 6)),
     )
 
 
@@ -509,6 +514,17 @@ async def candidate_action(cid: int, action: str, request: Request, background: 
         elif action == "link":
             link = workflow.invite(c)
             return back(f"{url}?link={quote(link)}#link")
+        elif action == "invite":
+            back_to = f"/i/{c['initiative_id']}#nominees" if f.get("next") == "initiative" else f"{url}#link"
+            if (locked := step_locked(c["initiative_id"], 6)):
+                return locked
+            res = await workflow.email_invite(c, request.cookies.get("lang", "en"))
+            if res["status"] == "sent":
+                return back(back_to, msg=f"Invitation emailed to {c['name']} ({c['email']}).")
+            if res["status"] == "failed":
+                return back(back_to, err=f"The invitation to {c['name']} was not sent: {res['error']} Their earlier link, if any, still works.")
+            return back(f"{url}?link={quote(res['link'])}#link",
+                        msg="Email isn't set up, so nothing was sent. The invitation is saved below; copy the link and send it yourself.")
         elif action == "revoke":
             security.revoke_links(cid)
             db.audit("link.revoked", actor="lead", candidate_id=cid)
@@ -554,7 +570,8 @@ def download_doc(doc_id: int, request: Request):
 def settings_page(request: Request):
     lead(request)
     version, cfg = scoring.current_config()
-    return render(request, "settings.html", cfg=cfg, version=version, ai_reason=config.settings.ai_mode_reason,
+    return render(request, "settings.html", cfg=cfg, version=version, ai_reason=config.settings.ai_mode_reason, mail=mailer.summary(),
+                  production=production.is_production(),
                   history=db.q("SELECT version, note, created_at FROM config_versions ORDER BY version DESC"))
 
 
@@ -575,6 +592,28 @@ async def settings_save(request: Request):
     except (ValueError, KeyError) as e:
         return back("/settings", err=f"Settings not saved: {e}")
     return back("/settings", msg=f"Saved as configuration version {v}.")
+
+
+@app.post("/settings/test-email")
+async def settings_test_email(request: Request):
+    lead(request)
+    f = await form(request)
+    to = (f.get("to") or "").strip()
+    if "@" not in to:
+        return back("/settings#email", err="Enter the email address to send the test to.")
+    if not mailer.configured():
+        return back("/settings#email", err="Email isn't set up yet. Add SMTP_HOST and the other SMTP settings first.")
+    try:
+        await mailer.send(to, "CDP Champion Selection: test email | رسالة تجريبية",
+                          "This is a test from the CDP Champion Selection tool. Email sending works.\n\n"
+                          "هذه رسالة تجريبية من أداة اختيار الأبطال. إرسال البريد يعمل.",
+                          "<p>This is a test from the CDP Champion Selection tool. Email sending works.</p>"
+                          "<p dir='rtl'>هذه رسالة تجريبية من أداة اختيار الأبطال. إرسال البريد يعمل.</p>")
+    except mailer.MailError as e:
+        db.audit("email.test_failed", actor="lead", error=str(e))
+        return back("/settings#email", err=f"The test email was not sent: {e}")
+    db.audit("email.test_sent", actor="lead", to=to)
+    return back("/settings#email", msg=f"Test email sent to {to}.")
 
 
 @app.get("/audit", response_class=HTMLResponse)

@@ -29,6 +29,16 @@
 </tr>{% endfor %}</tbody></table></div>
 <p><strong>{{ _("Score:") }}</strong> <bdi>{{ _(result.score_text) }}</bdi> · <strong>{{ _("Threshold:") }}</strong> <bdi>{{ result.threshold|int }}/100</bdi> · <strong>{{ _("Evidence coverage:") }}</strong> {{ _(result.evidence_coverage) }}</p>
 {% endmacro %}
+{% macro invite_note(e) -%}
+{%- if e -%}{% set d = e.created_at[:10] %}<div class="small {{ 'overdue' if e.status == 'failed' else 'muted' }}"{% if e.error %} title="{{ _(e.error) }}"{% endif %}>
+{%- if e.status == "sent" %}✓ {{ _("Emailed {date}", date=d) }}{% elif e.status == "demo" %}{{ _("Saved, not sent {date}", date=d) }}{% else %}{{ _("Not sent {date}", date=d) }}{% endif %}</div>{%- endif -%}
+{%- endmacro %}
+{% macro invite_button(c, step6_done, blocked, next="") -%}
+{%- set resend = c.status != "Shortlisted" -%}
+<form method="post" action="/c/{{ c.id }}/invite" class="invite-form"><input type="hidden" name="csrf" value="{{ csrf }}">{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+<button class="small{{ ' secondary' if resend }}"{% if step6_done %} disabled title="{{ _("Step 6 is marked complete. Reopen it to send invitations.") }}"{% elif blocked %} disabled title="{{ _("Email isn't set up yet.") }}"{% elif resend %} data-confirm="{{ _("Send {name} a new invitation? Their earlier link will stop working.", name=c.name) }}" onclick="return confirm(this.dataset.confirm)"{% endif %}>
+{{- _("Resend") if resend else _("Invite") }}</button></form>
+{%- endmacro %}
 {% macro file_input(name, accept, label, multiple=False) -%}
 <label class="filepick"><input type="file" name="{{ name }}" accept="{{ accept }}" {{ "multiple" if multiple }} required aria-label="{{ label }}" data-none="{{ _("No file chosen") }}" data-many="{{ _("{n} files chosen") }}"><span class="pick-btn" aria-hidden="true">{{ _("Choose files") if multiple else _("Choose file") }}</span><span class="fname">{{ _("No file chosen") }}</span></label>
 {%- endmacro %}

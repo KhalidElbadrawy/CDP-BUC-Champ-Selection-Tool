@@ -91,12 +91,14 @@ class LinkError(Exception):
         self.reason = reason  # invalid | expired | revoked
 
 
-def issue_link(candidate_id: int, days: int | None = None) -> str:
-    """Revokes any earlier link for the candidate and returns a fresh raw token."""
+def issue_link(candidate_id: int, days: int | None = None, keep_others: bool = False) -> str:
+    """Returns a fresh raw token. Earlier links are revoked, unless keep_others is set
+    (used while an invitation email is being sent: see keep_only_link and cancel_link)."""
     if days is None:
         from app.scoring import current_config
         days = int(current_config()[1]["link_expiry_days"].get("candidate", 30))
-    db.ex("UPDATE tokens SET revoked_at=? WHERE candidate_id=? AND revoked_at IS NULL", (db.now(), candidate_id))
+    if not keep_others:
+        db.ex("UPDATE tokens SET revoked_at=? WHERE candidate_id=? AND revoked_at IS NULL", (db.now(), candidate_id))
     raw = secrets.token_urlsafe(24)
     expires = (datetime.now(timezone.utc) + timedelta(days=days)).replace(microsecond=0).isoformat()
     db.ex("INSERT INTO tokens(token_hash, candidate_id, raw_hint, expires_at, created_at) VALUES (?,?,?,?,?)",
@@ -127,6 +129,21 @@ def require_candidate(request: Request) -> CandidateAccess:
         return resolve(request.cookies.get(CAND_COOKIE))
     except LinkError as e:
         raise HTTPException(401, e.reason)
+
+
+def keep_only_link(candidate_id: int, raw: str) -> None:
+    """The new link was delivered: earlier links stop working."""
+    db.ex("UPDATE tokens SET revoked_at=? WHERE candidate_id=? AND revoked_at IS NULL AND token_hash!=?",
+          (db.now(), candidate_id, _hash(raw)))
+
+
+def cancel_link(raw: str) -> None:
+    """The new link was never delivered: it stops working, and earlier links are left as they were."""
+    db.ex("UPDATE tokens SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL", (db.now(), _hash(raw)))
+
+
+def link_expiry(raw: str) -> str:
+    return db.q1("SELECT expires_at FROM tokens WHERE token_hash=?", (_hash(raw),))["expires_at"]
 
 
 def revoke_links(candidate_id: int) -> None:

@@ -50,12 +50,29 @@
 {% if new_link %}<div class="notice">{{ _h("<strong>New personal link</strong> (shown only now; copy it into your email):") }}
 <div class="copyrow"><input id="nl" type="text" dir="ltr" readonly value="{{ new_link }}" aria-label="{{ _("Assessment link") }}"><button type="button" class="small" data-copied="{{ _("Copied") }}" onclick="navigator.clipboard.writeText(document.getElementById('nl').value).then(()=>this.textContent=this.dataset.copied,()=>document.getElementById('nl').select())">{{ _("Copy") }}</button></div></div>{% endif %}
 {% if link %}<p class="small">{{ _("Active link ending …{hint} · expires {date}", hint=link.raw_hint, date=link.expires_at[:10]) }}{% if link.last_used_at %} · {{ _("last opened {date}", date=link.last_used_at[:10]) }}{% endif %}</p>{% endif %}
-{% if c.status in wf.INVITABLE %}<div class="actions">
+{% if c.status in wf.INVITABLE %}
+<div class="invite-box"><h3>{{ _("Email the invitation") }}</h3>
+{% if c.email %}<p class="small">{{ _("Sends a personal link to {email}, in English and Arabic. It replaces any earlier link once it is delivered.", email=c.email) }}</p>
+<div class="actions" style="margin-top:6px">{{ m.invite_button(c, step6_done, production and not mail.configured) }}{{ m.invite_note(invites[0] if invites else None) }}</div>
+{% if not mail.configured %}<p class="small muted">{{ _("Email isn't set up yet.") }} {{ _("Add the SMTP settings in the hosting service (see Settings).") if production else _("In this demo, the invitation is saved here without being sent.") }}</p>{% endif %}
+{% else %}<p class="small muted">{{ _("There is no email address on record, so the invitation can't be emailed. Create a link below and send it yourself.") }}</p>{% endif %}
+</div>
+<h3>{{ _("Or create a link to send yourself") }}</h3>
+<div class="actions">
 <form method="post" action="/c/{{ c.id }}/link"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">{{ _("Create a new link") if link else _("Create link") }}</button></form>
 {% if link %}<form method="post" action="/c/{{ c.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">{{ _("Cancel link") }}</button></form>{% endif %}</div>
 <form method="post" action="/c/{{ c.id }}/time" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="xt" class="small">{{ _("Extra time for the timed game (reasonable adjustment)") }}</label>
 <select id="xt" name="factor" style="max-width:120px">{% for f in [1.0, 1.25, 1.5, 2.0] %}<option value="{{ f }}" {{ "selected" if c.extra_time == f }}>{{ f }}×</option>{% endfor %}</select><button class="small secondary">{{ _("Save") }}</button></form>
 {% else %}<p class="muted small">{{ _("Links are available once the candidate is shortlisted.") }}</p>{% endif %}
+{% if invites %}<details><summary>{{ _("Invitation emails ({n})", n=invites|length) }}</summary>
+<div class="table-wrap"><table class="small"><thead><tr><th>{{ _("When") }}</th><th>{{ _("To") }}</th><th>{{ _("Result") }}</th></tr></thead><tbody>
+{% for e in invites %}<tr><td><bdi>{{ e.created_at[:16]|replace("T", " ") }}</bdi></td><td><bdi>{{ e.to_addr }}</bdi></td>
+<td><span class="pill {{ {'sent': 'ok', 'failed': 'bad'}.get(e.status, 'warn') }}">{{ _({"sent": "Sent", "failed": "Not sent", "demo": "Saved, not sent (demo)"}.get(e.status, e.status)) }}</span>{% if e.error %} {{ _(e.error) }}{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="small muted">{{ _("The latest email as the nominee receives it (the link is shortened here; the working link is never stored):") }}</p>
+<pre class="email-preview" dir="auto">{{ invites[0].subject }}
+
+{{ invites[0].body_text }}</pre></details>{% endif %}
 </section>
 
 <section class="card"><h2>{{ _("Assessment") }}</h2>

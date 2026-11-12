@@ -485,6 +485,54 @@ AR.update({
     "Use the written version": "استخدام النسخة المكتوبة",
     "Both versions are assessed against the same scorecard. Once you start one, you cannot switch.": "تُقيَّم النسختان وفق بطاقة التقييم نفسها. وبعد أن تبدأ إحداهما لا يمكنك التبديل.",
     "Choose file": "اختر ملفاً", "Choose files": "اختر الملفات", "No file chosen": "لم يُختر ملف", "{n} files chosen": "الملفات المختارة: {n}",
+    # invitations by email
+    "Invitation": "الدعوة", "Invite": "دعوة", "Resend": "إعادة الإرسال", "No email": "لا يوجد بريد",
+    "Download the links list and send theirs yourself.": "نزّل قائمة الروابط وأرسل رابطه بنفسك.",
+    "Emailed {date}": "أُرسلت بالبريد في {date}", "Saved, not sent {date}": "محفوظة، لم تُرسل {date}", "Not sent {date}": "لم تُرسل {date}",
+    "Step 6 is marked complete. Reopen it to send invitations.": "الخطوة 6 محددة كمكتملة. أعد فتحها لإرسال الدعوات.",
+    "Email isn't set up yet.": "لم يُضبط البريد الإلكتروني بعد.",
+    "Send {name} a new invitation? Their earlier link will stop working.": "هل تريد إرسال دعوة جديدة إلى {name}؟ سيتوقف رابطه السابق عن العمل.",
+    "{n} shortlisted candidate(s). Press Invite next to a nominee below to email them their personal link, or download a mail-merge list (name, email, personal link) and send the links from your own mailbox. Creating links again replaces older ones.":
+        "عدد المرشحين في القائمة المختصرة: {n}. اضغط «دعوة» بجانب المرشح أدناه لإرسال رابطه الشخصي إليه بالبريد الإلكتروني، أو نزّل قائمة الدمج البريدي (الاسم، البريد الإلكتروني، الرابط الشخصي) وأرسل الروابط من بريدك. إنشاء الروابط مجدداً يستبدل الروابط السابقة.",
+    "Email is set up: invitations are sent from {sender}.": "البريد الإلكتروني مضبوط: تُرسل الدعوات من {sender}.",
+    "Email isn't set up yet, so the Invite buttons are switched off. Add the SMTP settings in the hosting service (see Settings), or download the links list.":
+        "لم يُضبط البريد الإلكتروني بعد، لذا أزرار «دعوة» معطلة. أضف إعدادات SMTP في خدمة الاستضافة (انظر الإعدادات)، أو نزّل قائمة الروابط.",
+    "Demo: email isn't set up, so Invite saves each invitation on the nominee's page without sending it.":
+        "عرض تجريبي: البريد الإلكتروني غير مضبوط، لذا يحفظ زر «دعوة» كل دعوة في صفحة المرشح دون إرسالها.",
+    "Email the invitation": "إرسال الدعوة بالبريد الإلكتروني",
+    "Sends a personal link to {email}, in English and Arabic. It replaces any earlier link once it is delivered.":
+        "يرسل رابطاً شخصياً إلى {email} بالعربية والإنجليزية، ويحل محل أي رابط سابق بعد وصوله.",
+    "Add the SMTP settings in the hosting service (see Settings).": "أضف إعدادات SMTP في خدمة الاستضافة (انظر الإعدادات).",
+    "In this demo, the invitation is saved here without being sent.": "في هذا العرض التجريبي، تُحفظ الدعوة هنا دون إرسالها.",
+    "There is no email address on record, so the invitation can't be emailed. Create a link below and send it yourself.":
+        "لا يوجد عنوان بريد إلكتروني مسجّل، لذا لا يمكن إرسال الدعوة بالبريد. أنشئ رابطاً أدناه وأرسله بنفسك.",
+    "Or create a link to send yourself": "أو أنشئ رابطاً لترسله بنفسك",
+    "Invitation emails ({n})": "رسائل الدعوة ({n})", "To": "إلى",
+    "Sent": "أُرسلت", "Not sent": "لم تُرسل", "Saved, not sent (demo)": "محفوظة، لم تُرسل (تجريبي)",
+    "The latest email as the nominee receives it (the link is shortened here; the working link is never stored):":
+        "آخر رسالة كما يستلمها المرشح (الرابط مختصر هنا؛ ولا يُحفظ الرابط الفعّال أبداً):",
+    "Email": "البريد الإلكتروني",
+    "Invitations are sent from {sender} through {host}, port {port}.": "تُرسل الدعوات من {sender} عبر {host}، المنفذ {port}.",
+    "Replies go to {addr}.": "تصل الردود إلى {addr}.",
+    "Send the test to": "أرسل الرسالة التجريبية إلى", "Send a test email": "إرسال رسالة تجريبية",
+    "Email isn't set up, so the Invite buttons can't send anything yet.": "البريد الإلكتروني غير مضبوط، لذا لا تستطيع أزرار «دعوة» إرسال أي شيء بعد.",
+    "In this demo, each invitation is saved on the nominee's page instead.": "في هذا العرض التجريبي، تُحفظ كل دعوة في صفحة المرشح بدلاً من ذلك.",
+    "To send email, add these in the hosting settings (on Render: Environment): <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>, and <code>CDP_LEAD_EMAIL</code> for replies. For Microsoft 365 use <code>smtp.office365.com</code> and port <code>587</code>; the sending mailbox must allow SMTP sign-in.":
+        "لإرسال البريد، أضف ما يلي في إعدادات الاستضافة (في Render: ‏Environment): <code>SMTP_HOST</code> و<code>SMTP_PORT</code> و<code>SMTP_USER</code> و<code>SMTP_PASSWORD</code> و<code>SMTP_FROM</code>، و<code>CDP_LEAD_EMAIL</code> لاستقبال الردود. في Microsoft 365 استخدم <code>smtp.office365.com</code> والمنفذ <code>587</code>، ويجب أن يسمح صندوق البريد المُرسِل بتسجيل الدخول عبر SMTP.",
+    "Press Invite to email each shortlisted nominee their personal link, or download the mail-merge list.":
+        "اضغط «دعوة» لإرسال الرابط الشخصي لكل مرشح في القائمة المختصرة بالبريد الإلكتروني، أو نزّل قائمة الدمج البريدي.",
+    "Email isn't set up, so nothing was sent. The invitation is saved below; copy the link and send it yourself.":
+        "البريد الإلكتروني غير مضبوط، لذا لم يُرسل شيء. الدعوة محفوظة أدناه؛ انسخ الرابط وأرسله بنفسك.",
+    "This nominee has no email address. Download the links list and send theirs yourself.": "لا يوجد عنوان بريد إلكتروني لهذا المرشح. نزّل قائمة الروابط وأرسل رابطه بنفسك.",
+    "Email sending isn't set up yet, so nothing was sent. Add the SMTP settings in the hosting service, or download the links list and send the links yourself.":
+        "لم يُضبط إرسال البريد بعد، لذا لم يُرسل شيء. أضف إعدادات SMTP في خدمة الاستضافة، أو نزّل قائمة الروابط وأرسلها بنفسك.",
+    "Their earlier link, if any, still works.": "رابطه السابق، إن وُجد، لا يزال يعمل.",
+    "Enter the email address to send the test to.": "أدخل عنوان البريد الذي تُرسل إليه الرسالة التجريبية.",
+    "Email isn't set up yet. Add SMTP_HOST and the other SMTP settings first.": "لم يُضبط البريد الإلكتروني بعد. أضف SMTP_HOST وبقية إعدادات SMTP أولاً.",
+    "The mail server refused the sign-in.": "رفض خادم البريد تسجيل الدخول.", "Check SMTP_USER and SMTP_PASSWORD.": "تحقق من SMTP_USER وSMTP_PASSWORD.",
+    "The mail server refused the recipient's address.": "رفض خادم البريد عنوان المستلم.",
+    "The mail server refused the sender address.": "رفض خادم البريد عنوان المُرسِل.", "Check SMTP_FROM.": "تحقق من SMTP_FROM.",
+    "The mail server did not answer in time.": "لم يستجب خادم البريد في الوقت المحدد.",
     # server messages (exact)
     "Initiative created. Start with step 1.": "تم إنشاء المبادرة. ابدأ بالخطوة 1.",
     "Initiative updated.": "تم تحديث المبادرة.",
@@ -569,6 +617,11 @@ AR_PATTERNS: dict[str, str] = {
     r"Jobs complete: (\d+) assessment\(s\) completed, (\d+) CV screening\(s\) retried, (\d+) closed record\(s\) past retention cleared\.":
         "اكتملت المهام: تقييمات مكتملة {0}، ومحاولات فرز سير ذاتية مُعادة {1}، وسجلات مغلقة تجاوزت مدة الاحتفاظ ومُسحت {2}.",
     r"Match a column for: (.+)\.": "طابِق عموداً لكل من: {0}.",
+    r"Invitation emailed to (.+) \((.+)\)\.": "أُرسلت الدعوة بالبريد الإلكتروني إلى {0} ({1}).",
+    r"The invitation to (.+?) was not sent: (.+)": "لم تُرسل الدعوة إلى {0}: {1}",
+    r"Test email sent to (.+)\.": "أُرسلت الرسالة التجريبية إلى {0}.",
+    r"The test email was not sent: (.+)": "لم تُرسل الرسالة التجريبية: {0}",
+    r"The mail server could not be reached or refused the message \((\w+)\)\.": "تعذّر الوصول إلى خادم البريد أو رفض الرسالة ({0}).",
     r"The Excel file could not be read \((\w+)\)\.": "تعذّرت قراءة ملف Excel \u200f({0}).",
     r"The file could not be read \((\w+)\)\.": "تعذّرت قراءة الملف ({0}).",
     r"AI screening could not run \((.+)\)\. The CV is saved; try again\.": "تعذّر تشغيل الفرز بالذكاء الاصطناعي ({0}). السيرة الذاتية محفوظة؛ حاول مرة أخرى.",

@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS tokens (               -- candidate assessment links
   raw_hint TEXT,                                  -- last 4 chars, to recognise a link
   expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL, last_used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS emails (               -- invitation emails; the working link is never stored
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  candidate_id INTEGER NOT NULL REFERENCES candidates(id),
+  kind TEXT NOT NULL,                             -- invite
+  to_addr TEXT NOT NULL, subject TEXT NOT NULL,
+  body_text TEXT NOT NULL,                        -- with the link shortened to its last 4 characters
+  status TEXT NOT NULL,                           -- sent | failed | demo
+  error TEXT, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS import_mappings (
   id INTEGER PRIMARY KEY CHECK (id = 1), mapping_json TEXT NOT NULL, updated_at TEXT NOT NULL
 );

@@ -2,6 +2,11 @@
 <h1>{{ _("Settings") }}</h1>
 <div class="card"><h2>{{ _("Service") }}</h2><p>{{ _("AI:") }} <strong>{{ _(ai_mode) }}</strong>. {{ _(ai_reason) }}</p>
 <p class="small muted">{{ _h("Live AI needs <code>ANTHROPIC_API_KEY</code> and <code>CDP_AI_MODE=live</code> in the hosting settings. The Change Lead password is <code>CDP_LEAD_PASSWORD</code>.") }}</p></div>
+<div class="card" id="email"><h2>{{ _("Email") }}</h2>
+{% if mail.configured %}<p>✓ {{ _("Invitations are sent from {sender} through {host}, port {port}.", sender=mail.sender, host=mail.host, port=mail.port) }}{% if mail.reply_to %} {{ _("Replies go to {addr}.", addr=mail.reply_to) }}{% endif %}</p>
+<form method="post" action="/settings/test-email" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="te" class="sr">{{ _("Send the test to") }}</label><input id="te" type="email" name="to" required dir="ltr" placeholder="name@organisation.gov" style="max-width:320px"><button class="small secondary">{{ _("Send a test email") }}</button></form>
+{% else %}<p>{{ _("Email isn't set up, so the Invite buttons can't send anything yet.") }}{% if not production %} {{ _("In this demo, each invitation is saved on the nominee's page instead.") }}{% endif %}</p>{% endif %}
+<p class="small muted">{{ _h("To send email, add these in the hosting settings (on Render: Environment): <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>, and <code>CDP_LEAD_EMAIL</code> for replies. For Microsoft 365 use <code>smtp.office365.com</code> and port <code>587</code>; the sending mailbox must allow SMTP sign-in.") }}</p></div>
 <form method="post" action="/settings"><input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="card"><h2>{{ _("Assessment scorecard") }} <span class="pill warn">{{ _(cfg.label) }}</span></h2>
 <p class="small">{{ _("Current version: v{v}. Each assessment records the version it used. Weights must total 100.", v=version) }}</p>

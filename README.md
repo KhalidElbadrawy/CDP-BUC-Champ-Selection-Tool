@@ -15,7 +15,7 @@ Version 1 (the multi-role nomination tool) is kept on the `v1` and `main` branch
 3. **Upload CVs** in bulk (PDF or DOCX). Files are matched by the nominee's name in the file name; assign any that don't match.
 4. **AI fit rating.** High and Moderate Fit are shortlisted automatically. A CV shows experience, not behaviour, so this is screening only.
 5. **Review shortlist.** Change any fit category with a recorded reason.
-6. **Send assessment links.** Download a mail-merge list (name, email, personal link) and send from your mailbox. Links expire and can be replaced or cancelled.
+6. **Send assessment links.** Press **Invite** next to a shortlisted nominee to email them their personal link (in English and Arabic), or download a mail-merge list (name, email, personal link) and send from your mailbox. Links expire and can be replaced or cancelled.
 7. **Assessments completed.** Nominees confirm consent and complete the LAUNCH WINDOW assessment. Follow-up questions appear on the same link when evidence is thin (up to 2 rounds). For anyone who can't use the link, enter their answers from an offline document.
 8. **Review reports.** Each report shows the CV fit, the game outcome (kept separate), the evidence-linked ratings and a recommendation. Labelled AI-generated and provisional.
 9. **Approve champions** with a short rationale.
@@ -43,6 +43,11 @@ LAUNCH WINDOW is a role-playing game in English or Arabic. The candidate joins t
 - Timed moments scale with any extra time you grant a candidate. The overall limit is in Settings (default 45 minutes).
 
 The game runs on the server: timers can't be tampered with, and every choice is saved as an event. The AI assesses the **game record** plus the two real-work answers, with every rating citing event ids (for example E23). Trust, readiness, rank and the launch ending are the **game outcome**: shown separately in the report and never part of the score. Ratings are provisional and should be calibrated in a pilot.
+
+## Inviting nominees by email
+Each shortlisted nominee has an **Invite** button (on the initiative's nominee table and on their own page). It creates a fresh personal link and emails it to the nominee's address from the survey, in English and Arabic. **Resend** sends a new link; the earlier one stops working once the new email is delivered. If sending fails, nothing changes: their earlier link, if any, still works, and the error is shown. Each nominee's page lists the invitations sent and shows the latest email; the stored copy has the link shortened, because working links are never kept.
+
+Sending needs a mailbox the tool can sign in to. Add these in Render's **Environment** (never in GitHub): `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `CDP_LEAD_EMAIL` for replies. For Microsoft 365 use `smtp.office365.com`; your IT team may need to allow SMTP sign-in for that mailbox. **Settings → Email** shows whether email is set up and can send a test message. Without these settings, production switches the Invite buttons off; locally (demo) Invite saves the email on the nominee's page without sending it.
 
 ## Clearing data
 On each initiative's page, **Clear stored data** permanently deletes that initiative's nominee records: survey rows, CV files, AI ratings, answers, game records, links, decisions and their audit entries. Type the initiative's name to confirm. You can keep the initiative (its steps reset) or delete it too. Other initiatives are untouched.

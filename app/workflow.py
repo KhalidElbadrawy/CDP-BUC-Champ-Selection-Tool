@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import ai, config, db, extraction, scoring, security
+from app import ai, config, db, extraction, invite_email, mailer, production, scoring, security
 
 STATUSES = [
     "No Consent", "Awaiting CV", "CV Unreadable", "CV Uploaded", "Shortlisted", "Not Shortlisted",
@@ -26,7 +26,7 @@ STEPS = [
     (3, "Upload CVs", "Bulk upload the nominees' CVs (PDF or DOCX)."),
     (4, "AI fit rating", "Run the AI CV screening: High, Moderate, Low or Doesn't Fit."),
     (5, "Review shortlist", "Check the shortlist and override any fit category with a reason."),
-    (6, "Send assessment links", "Copy each personal link or export the mail-merge list and send from your mailbox."),
+    (6, "Send assessment links", "Press Invite to email each shortlisted nominee their personal link, or download the mail-merge list."),
     (7, "Assessments completed", "Nominees complete the LAUNCH WINDOW assessment; the AI assesses their evidence."),
     (8, "Review reports", "Read each candidate's assessment report."),
     (9, "Approve champions", "Approve or decline each assessed candidate with a short rationale."),
@@ -292,6 +292,52 @@ def override_fit(c: dict, category: str, reason: str) -> None:
 
 
 # ------------------------------------------------------------------ assessment links
+def can_email(c: dict) -> bool:
+    return bool(c.get("email")) and "@" in c["email"]
+
+
+async def email_invite(c: dict, first_lang: str = "en") -> dict:
+    """Create a fresh personal link and email it to the nominee.
+
+    The earlier link keeps working until the new one is delivered, so a failed send never locks
+    anyone out. The stored copy of the email has the link shortened; the working link is not kept.
+    Returns {"status": "sent" | "demo" | "failed", "error": str | None, "link": raw link (demo only)}."""
+    _active(c)
+    if c["status"] not in INVITABLE:
+        raise WorkflowError("Only shortlisted candidates can be sent an assessment link.")
+    if not can_email(c):
+        raise WorkflowError("This nominee has no email address. Download the links list and send theirs yourself.")
+    if not mailer.configured() and production.is_production():
+        raise WorkflowError("Email sending isn't set up yet, so nothing was sent. Add the SMTP settings in the "
+                            "hosting service, or download the links list and send the links yourself.")
+    initiative = db.q1("SELECT name FROM initiatives WHERE id=?", (c["initiative_id"],))["name"]
+    raw = security.issue_link(c["id"], keep_others=True)
+    link = security.link_for(raw)
+    subject, text, html = invite_email.build(c["name"], initiative, link, security.link_expiry(raw), first_lang)
+    status, error = "demo", None
+    if mailer.configured():
+        try:
+            await mailer.send(c["email"], subject, text, html)
+            status = "sent"
+        except mailer.MailError as e:
+            status, error = "failed", str(e)
+    db.ex("INSERT INTO emails(candidate_id, kind, to_addr, subject, body_text, status, error, created_at) VALUES (?,?,?,?,?,?,?,?)",
+          (c["id"], "invite", c["email"], subject, text.replace(link, security.link_for("…" + raw[-4:])), status, error, db.now()))
+    if status == "failed":
+        security.cancel_link(raw)
+        db.audit("invite.failed", actor="lead", candidate_id=c["id"], error=error)
+        return {"status": status, "error": error, "link": None}
+    security.keep_only_link(c["id"], raw)
+    if c["status"] == "Shortlisted":
+        set_status(c["id"], "Invited", "lead")
+    db.audit("invite.emailed" if status == "sent" else "invite.recorded_demo", actor="lead", candidate_id=c["id"], to=c["email"])
+    return {"status": status, "error": None, "link": link if status == "demo" else None}
+
+
+def last_invite(cid: int) -> dict | None:
+    return db.q1("SELECT * FROM emails WHERE candidate_id=? AND kind='invite' ORDER BY id DESC LIMIT 1", (cid,))
+
+
 def invite(c: dict) -> str:
     _active(c)
     if c["status"] not in INVITABLE:
@@ -588,7 +634,7 @@ def clear_initiative(iid: int, delete_initiative: bool = False) -> dict:
             folder.rmdir()
     with db.tx() as conn:
         for table in ("documents", "cv_screenings", "evidence_versions", "assessments", "clarifications",
-                      "game_sessions", "tokens", "audit"):
+                      "game_sessions", "tokens", "emails", "audit"):
             conn.executemany(f"DELETE FROM {table} WHERE candidate_id=?", [(cid,) for cid in ids])
         conn.execute("DELETE FROM candidates WHERE initiative_id=?", (iid,))
         conn.execute("DELETE FROM entities WHERE id NOT IN (SELECT DISTINCT entity_id FROM candidates WHERE entity_id IS NOT NULL)")
