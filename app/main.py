@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import ai, config, db, imports, production, scoring, security, workflow
-from app.i18n import translator
+from app.i18n import html_translator, translator
 from app.workflow import WorkflowError
 
 HERE = Path(__file__).parent
@@ -65,7 +65,7 @@ async def production_lock(request: Request, call_next):
 # ------------------------------------------------------------------ helpers
 def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     lang = request.cookies.get("lang", "en")
-    base = dict(_=translator(lang), lang=lang, dir="rtl" if lang == "ar" else "ltr", csrf=security.csrf_token(request),
+    base = dict(_=translator(lang), _h=html_translator(lang), lang=lang, dir="rtl" if lang == "ar" else "ltr", csrf=security.csrf_token(request),
                 ai_mode=config.settings.ai_mode, is_lead=security.lead_ok(request), msg=request.query_params.get("msg"),
                 err=request.query_params.get("err"), scoring=scoring, wf=workflow, today=date.today().isoformat())
     base.update(ctx)

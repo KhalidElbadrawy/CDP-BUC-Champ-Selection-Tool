@@ -1,110 +1,101 @@
-{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ i.name }} · CDP Champion Selection<details class="card danger-zone"><summary>Clear stored data for this initiative</summary>
-<p>This permanently deletes every nominee record in <strong>{{ i.name }}</strong>: survey rows, CV files, AI ratings, answers, game records, links, reports, decisions and their audit entries. It cannot be undone. Export the register first if you need a copy.</p>
-<form method="post" action="/i/{{ i.id }}/clear"><input type="hidden" name="csrf" value="{{ csrf }}">
-<fieldset><legend>What to delete</legend>
-<label class="radio"><input type="radio" name="scope" value="data" checked> Nominee data only (keep the initiative and reset its steps)</label>
-<label class="radio"><input type="radio" name="scope" value="initiative"> Nominee data and the initiative itself</label></fieldset>
-<label for="cn">Type the initiative's name to confirm: <strong>{{ i.name }}</strong></label><input id="cn" type="text" name="confirm_name" autocomplete="off" required>
-<div class="actions"><button class="danger">Delete permanently</button></div></form>
-</details>
-{% endblock %}{% block content %}
-<p><a href="/">← Dashboard</a></p>
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ i.name }} · {{ _("CDP Champion Selection") }}{% endblock %}{% block content %}
+<p><a href="/">{{ "→" if dir == "rtl" else "←" }} {{ _("Dashboard") }}</a></p>
 {% set done_steps = steps|selectattr("completed_at")|list|length %}
 <section class="hero" aria-labelledby="init-title">
-  <div class="eyebrow">Initiative{% if i.platform %} · {{ i.platform }}{% endif %}{% if i.status == "closed" %} · closed{% endif %}</div>
-  <h1 id="init-title">{{ i.name }}<span class="line2">Champion journey: {{ done_steps }} of {{ steps|length }} steps</span></h1>
-  {% if i.description %}<p>{{ i.description }}</p>{% endif %}
+  <div class="eyebrow">{{ _("Initiative") }}{% if i.platform %} · {{ i.platform }}{% endif %}{% if i.status == "closed" %} · {{ _("closed") }}{% endif %}</div>
+  <h1 id="init-title">{{ i.name }}<span class="line2">{{ _("Champion journey: {done} of {total} steps", done=done_steps, total=steps|length) }}</span></h1>
+  {% if i.description %}<p dir="auto">{{ i.description }}</p>{% endif %}
   <div class="bar" style="max-width:520px" aria-hidden="true"><span style="width:{{ (100 * done_steps / steps|length)|round|int }}%"></span></div>
 </section>
 
-{% set done = {} %}{% for s in steps %}{% if s.completed_at %}{% set _ = done.update({s.no: s.completed_at}) %}{% endif %}{% endfor %}
-{% macro locked_note(no) %}{% if done.get(no) %}<div class="locked-note" role="status"><span class="locked-badge">✓ Step {{ no }} completed {{ done[no][:10] }}</span>
-<span class="small muted">Reopen this step to make changes.</span>
-<form method="post" action="/i/{{ i.id }}/step/{{ no }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="complete" value="0"><button class="small secondary">Reopen</button></form></div>{% endif %}{% endmacro %}
+{% set done = {} %}{% for s in steps %}{% if s.completed_at %}{% set _x = done.update({s.no: s.completed_at}) %}{% endif %}{% endfor %}
+{% macro locked_note(no) %}{% if done.get(no) %}<div class="locked-note" role="status"><span class="locked-badge">✓ {{ _("Step {no} completed {date}", no=no, date=done[no][:10]) }}</span>
+<span class="small muted">{{ _("Reopen this step to make changes.") }}</span>
+<form method="post" action="/i/{{ i.id }}/step/{{ no }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="complete" value="0"><button class="small secondary">{{ _("Reopen") }}</button></form></div>{% endif %}{% endmacro %}
 <div class="layout-2">
-<section class="card tracker" aria-label="Step tracker"><h2>Steps</h2>
+<section class="card tracker" aria-label="{{ _("Step tracker") }}"><h2>{{ _("Steps") }}</h2>
 <ol class="steplist">{% for s in steps %}
 <li class="{{ 'done' if s.completed_at else ('current' if s.current else '') }}">
   <div class="stepnum" aria-hidden="true">{{ "✓" if s.completed_at else s.no }}</div>
-  <div class="stepbody"><strong>{{ s.title }}</strong>{% if s.current %} <span class="pill info">next</span>{% endif %}
-    <div class="small muted">{{ s.hint }}</div>
-    {% if s.progress %}<div class="small">{{ s.progress }}</div>{% endif %}
-    {% if s.completed_at %}<div class="small muted">Completed {{ s.completed_at[:10] }}</div>{% endif %}
+  <div class="stepbody"><strong>{{ _(s.title) }}</strong>{% if s.current %} <span class="pill info">{{ _("next") }}</span>{% endif %}
+    <div class="small muted">{{ _(s.hint) }}</div>
+    {% if s.progress %}<div class="small">{{ _(s.progress) }}</div>{% endif %}
+    {% if s.completed_at %}<div class="small muted">{{ _("Completed {date}", date=s.completed_at[:10]) }}</div>{% endif %}
   </div>
   <form method="post" action="/i/{{ i.id }}/step/{{ s.no }}"><input type="hidden" name="csrf" value="{{ csrf }}">
-  {% if s.completed_at %}<input type="hidden" name="complete" value="0"><button class="small secondary" aria-label="Reopen step {{ s.no }}">Reopen</button>
-  {% else %}<input type="hidden" name="complete" value="1"><button class="small" aria-label="Mark step {{ s.no }} complete">Mark complete</button>{% endif %}</form>
+  {% if s.completed_at %}<input type="hidden" name="complete" value="0"><button class="small secondary" aria-label="{{ _("Reopen step {no}", no=s.no) }}">{{ _("Reopen") }}</button>
+  {% else %}<input type="hidden" name="complete" value="1"><button class="small" aria-label="{{ _("Mark step {no} complete", no=s.no) }}">{{ _("Mark complete") }}</button>{% endif %}</form>
 </li>{% endfor %}</ol>
 </section>
 
 <div class="stack">
-<section class="card{{ " locked" if done.get(2) }}"><h2>Step 2 · Import survey results</h2>
+<section class="card{{ " locked" if done.get(2) }}"><h2>{{ _("Step 2 · Import survey results") }}</h2>
 {{ locked_note(2) }}<fieldset class="lockable" {{ "disabled" if done.get(2) }}>
-<p class="small muted">Upload the Excel or CSV export from your survey tool. You'll check the matched columns before anything is imported.</p>
+<p class="small muted">{{ _("Upload the Excel or CSV export from your survey tool. You'll check the matched columns before anything is imported.") }}</p>
 <form method="post" action="/i/{{ i.id }}/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="file" name="file" accept=".xlsx,.csv" required aria-label="Survey export file"><div class="actions"><button>Upload survey file</button></div></form></fieldset></section>
+{{ m.file_input("file", ".xlsx,.csv", _("Survey export file")) }}<div class="actions"><button>{{ _("Upload survey file") }}</button></div></form></fieldset></section>
 
-<section class="card{{ " locked" if done.get(3) }}"><h2>Step 3 · Upload CVs</h2>
+<section class="card{{ " locked" if done.get(3) }}"><h2>{{ _("Step 3 · Upload CVs") }}</h2>
 {{ locked_note(3) }}<fieldset class="lockable" {{ "disabled" if done.get(3) }}>
-<p class="small muted">Select many files at once. Files are matched to nominees by name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>; two parts of the name are enough). On the next page, pick the nominee for any file that wasn't matched.</p>
+<p class="small muted">{{ _h("Select many files at once. Files are matched to nominees by name in the file name (e.g. <code>Aisha_Rahman_CV.pdf</code>; two parts of the name are enough). On the next page, pick the nominee for any file that wasn't matched.") }}</p>
 <form method="post" action="/i/{{ i.id }}/cvs" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="file" name="files" accept=".pdf,.docx" multiple required aria-label="CV files"><div class="actions"><button>Upload CVs</button></div></form></fieldset></section>
+{{ m.file_input("files", ".pdf,.docx", _("CV files"), multiple=True) }}<div class="actions"><button>{{ _("Upload CVs") }}</button></div></form></fieldset></section>
 
-<section class="card{{ " locked" if done.get(4) }}"><h2>Step 4 · AI fit rating</h2>
+<section class="card{{ " locked" if done.get(4) }}"><h2>{{ _("Step 4 · AI fit rating") }}</h2>
 {{ locked_note(4) }}<fieldset class="lockable" {{ "disabled" if done.get(4) }}>
-<p class="small muted">{{ eligible }} CV(s) ready to screen. Only nominees with recorded consent are screened. High and Moderate Fit are shortlisted automatically; you can change any category with a reason on the nominee's page.</p>
-{% if not eligible %}<div class="notice small"><strong>Why nothing is ready:</strong>
-{% if not blockers.total %} no nominees yet. Import the survey results first (step 2).
+<p class="small muted">{{ _("{n} CV(s) ready to screen. Only nominees with recorded consent are screened. High and Moderate Fit are shortlisted automatically; you can change any category with a reason on the nominee's page.", n=eligible) }}</p>
+{% if not eligible %}<div class="notice small"><strong>{{ _("Why nothing is ready:") }}</strong>
+{% if not blockers.total %} {{ _("no nominees yet. Import the survey results first (step 2).") }}
 {% else %}<ul style="margin:4px 0 0">
-{% if blockers.no_consent %}<li>{{ blockers.no_consent }} nominee(s) have no consent recorded (status <em>No Consent</em>).</li>{% endif %}
-{% if blockers.awaiting_cv %}<li>{{ blockers.awaiting_cv }} nominee(s) have no CV yet (step 3).</li>{% endif %}
-{% if blockers.unreadable %}<li>{{ blockers.unreadable }} CV(s) could not be read; upload a text-based PDF or Word file on the nominee's page.</li>{% endif %}
-{% if blockers.screened %}<li>{{ blockers.screened }} nominee(s) are already rated.</li>{% endif %}</ul>{% endif %}</div>{% endif %}
-{% if blockers.no_consent %}<details><summary>Record consent for all {{ blockers.no_consent }} nominee(s) without it</summary>
+{% if blockers.no_consent %}<li>{{ _h("{n} nominee(s) have no consent recorded (status <em>No Consent</em>).", n=blockers.no_consent) }}</li>{% endif %}
+{% if blockers.awaiting_cv %}<li>{{ _("{n} nominee(s) have no CV yet (step 3).", n=blockers.awaiting_cv) }}</li>{% endif %}
+{% if blockers.unreadable %}<li>{{ _("{n} CV(s) could not be read; upload a text-based PDF or Word file on the nominee's page.", n=blockers.unreadable) }}</li>{% endif %}
+{% if blockers.screened %}<li>{{ _("{n} nominee(s) are already rated.", n=blockers.screened) }}</li>{% endif %}</ul>{% endif %}</div>{% endif %}
+{% if blockers.no_consent %}<details><summary>{{ _("Record consent for all {n} nominee(s) without it", n=blockers.no_consent) }}</summary>
 <form method="post" action="/i/{{ i.id }}/consent-all"><input type="hidden" name="csrf" value="{{ csrf }}">
-<label class="radio"><input type="checkbox" name="confirm" value="yes" required> I confirm these nominees agreed to AI screening of their CV (for example by email or in a meeting).</label>
-<div class="actions"><button class="secondary small">Record consent</button></div></form></details>{% endif %}
-<form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>Run AI fit rating</button></form></fieldset></section>
+<label class="radio"><input type="checkbox" name="confirm" value="yes" required> {{ _("I confirm these nominees agreed to AI screening of their CV (for example by email or in a meeting).") }}</label>
+<div class="actions"><button class="secondary small">{{ _("Record consent") }}</button></div></form></details>{% endif %}
+<form method="post" action="/i/{{ i.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button {{ "disabled" if not eligible }}>{{ _("Run AI fit rating") }}</button></form></fieldset></section>
 
-<section class="card{{ " locked" if done.get(6) }}"><h2>Step 6 · Send assessment links</h2>
+<section class="card{{ " locked" if done.get(6) }}"><h2>{{ _("Step 6 · Send assessment links") }}</h2>
 {{ locked_note(6) }}<fieldset class="lockable" {{ "disabled" if done.get(6) }}>
-<p class="small muted">{{ shortlisted }} shortlisted candidate(s). Download a mail-merge list (name, email, personal link) and send the links from your own mailbox. Creating links again replaces older ones.</p>
+<p class="small muted">{{ _("{n} shortlisted candidate(s). Download a mail-merge list (name, email, personal link) and send the links from your own mailbox. Creating links again replaces older ones.", n=shortlisted) }}</p>
 <form method="post" action="/i/{{ i.id }}/links.csv" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}">
-<button name="scope" value="new" {{ "disabled" if not shortlisted }}>Download links for candidates without one</button>
-<button name="scope" value="all" class="secondary" {{ "disabled" if not shortlisted }}>Recreate all links</button></form></fieldset></section>
+<button name="scope" value="new" {{ "disabled" if not shortlisted }}>{{ _("Download links for candidates without one") }}</button>
+<button name="scope" value="all" class="secondary" {{ "disabled" if not shortlisted }}>{{ _("Recreate all links") }}</button></form></fieldset></section>
 </div>
 </div>
 
-<section class="card"><h2>Nominees</h2>
-<form method="get" class="actions" style="margin-top:0"><label for="st" class="sr">Filter by status</label><select id="st" name="status" style="max-width:260px"><option value="">All statuses</option>{% for s in statuses %}<option {{ "selected" if status == s }}>{{ s }}</option>{% endfor %}</select><button class="small secondary">Filter</button>
-<a class="btn secondary small" href="/i/{{ i.id }}/export.csv">Export (CSV)</a></form>
+<section class="card"><h2>{{ _("Nominees") }}</h2>
+<form method="get" class="actions" style="margin-top:0"><label for="st" class="sr">{{ _("Filter by status") }}</label><select id="st" name="status" style="max-width:260px"><option value="">{{ _("All statuses") }}</option>{% for s in statuses %}<option value="{{ s }}" {{ "selected" if status == s }}>{{ _(s) }}</option>{% endfor %}</select><button class="small secondary">{{ _("Filter") }}</button>
+<a class="btn secondary small" href="/i/{{ i.id }}/export.csv">{{ _("Export (CSV)") }}</a></form>
 <div class="table-wrap" style="margin-top:10px"><table>
-<thead><tr><th>Name</th><th>Entity</th><th>Platform</th><th>Consent</th><th>CV</th><th>CV fit</th><th>Status</th><th>Outcome</th></tr></thead>
+<thead><tr><th>{{ _("Name") }}</th><th>{{ _("Entity") }}</th><th>{{ _("Platform") }}</th><th>{{ _("Consent") }}</th><th>{{ _("CV") }}</th><th>{{ _("CV fit") }}</th><th>{{ _("Status") }}</th><th>{{ _("Outcome") }}</th></tr></thead>
 <tbody>{% for c in cands %}<tr>
 <td><a href="/c/{{ c.id }}">{{ c.name }}</a><br><span class="small muted">{{ c.ref }}</span></td><td>{{ c.entity_name }}</td><td class="small">{{ c.platform or "—" }}</td>
 <td>{{ "✓" if c.consent_screening else "✗" }}</td>
-<td class="small">{% if c.cv_status == "ok" %}✓{% elif c.cv_status %}<span class="pill warn">{{ c.cv_status }}</span>{% else %}—{% endif %}</td>
-<td>{{ m.fit_pill(c.fit_final) }}{% if c.fit_override_reason %} <span class="small muted" title="{{ c.fit_override_reason }}">(changed)</span>{% endif %}</td>
-<td>{{ m.status_pill(c.status) }}{% if c.last_error %}<div class="small overdue">{{ c.last_error }}</div>{% endif %}</td><td>{{ m.outcome_pill(c.outcome) }}</td></tr>
-{% else %}<tr><td colspan="8">No nominees yet. Import the survey results (step 2).</td></tr>{% endfor %}</tbody></table></div>
+<td class="small">{% if c.cv_status == "ok" %}✓{% elif c.cv_status %}<span class="pill warn">{{ _(c.cv_status) }}</span>{% else %}—{% endif %}</td>
+<td>{{ m.fit_pill(c.fit_final) }}{% if c.fit_override_reason %} <span class="small muted" title="{{ c.fit_override_reason }}">{{ _("(changed)") }}</span>{% endif %}</td>
+<td>{{ m.status_pill(c.status) }}{% if c.last_error %}<div class="small overdue">{{ _(c.last_error) }}</div>{% endif %}</td><td>{{ m.outcome_pill(c.outcome) }}</td></tr>
+{% else %}<tr><td colspan="8">{{ _("No nominees yet. Import the survey results (step 2).") }}</td></tr>{% endfor %}</tbody></table></div>
 </section>
 
-<details class="card"><summary>Edit or close this initiative</summary>
+<details class="card"><summary>{{ _("Edit or close this initiative") }}</summary>
 <form method="post" action="/i/{{ i.id }}/edit" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}">
-<div><label for="en">Name</label><input id="en" type="text" name="name" value="{{ i.name }}"></div>
-<div><label for="ep">Platform</label><input id="ep" type="text" name="platform" value="{{ i.platform or '' }}"></div>
-<div><label for="ed">Description</label><input id="ed" type="text" name="description" value="{{ i.description or '' }}"></div>
-<div><button class="secondary">Save</button></div></form>
+<div><label for="en">{{ _("Name") }}</label><input dir="auto" id="en" type="text" name="name" value="{{ i.name }}"></div>
+<div><label for="ep">{{ _("Platform") }}</label><input dir="auto" id="ep" type="text" name="platform" value="{{ i.platform or '' }}"></div>
+<div><label for="ed">{{ _("Description") }}</label><input dir="auto" id="ed" type="text" name="description" value="{{ i.description or '' }}"></div>
+<div><button class="secondary">{{ _("Save") }}</button></div></form>
 <form method="post" action="/i/{{ i.id }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="close"><input type="hidden" name="closed" value="{{ '0' if i.status == 'closed' else '1' }}">
-<div class="actions"><button class="secondary small">{{ "Reopen initiative" if i.status == "closed" else "Close initiative" }}</button></div></form>
+<div class="actions"><button class="secondary small">{{ _("Reopen initiative") if i.status == "closed" else _("Close initiative") }}</button></div></form>
 </details>
-<details class="card danger-zone"><summary>Clear stored data for this initiative</summary>
-<p>This permanently deletes every nominee record in <strong>{{ i.name }}</strong>: survey rows, CV files, AI ratings, answers, game records, links, reports, decisions and their audit entries. It cannot be undone. Export the register first if you need a copy.</p>
+<details class="card danger-zone"><summary>{{ _("Clear stored data for this initiative") }}</summary>
+<p>{{ _h("This permanently deletes every nominee record in <strong>{name}</strong>: survey rows, CV files, AI ratings, answers, game records, links, reports, decisions and their audit entries. It cannot be undone. Export the register first if you need a copy.", name=i.name) }}</p>
 <form method="post" action="/i/{{ i.id }}/clear"><input type="hidden" name="csrf" value="{{ csrf }}">
-<fieldset><legend>What to delete</legend>
-<label class="radio"><input type="radio" name="scope" value="data" checked> Nominee data only (keep the initiative and reset its steps)</label>
-<label class="radio"><input type="radio" name="scope" value="initiative"> Nominee data and the initiative itself</label></fieldset>
-<label for="cn">Type the initiative's name to confirm: <strong>{{ i.name }}</strong></label><input id="cn" type="text" name="confirm_name" autocomplete="off" required>
-<div class="actions"><button class="danger">Delete permanently</button></div></form>
+<fieldset><legend>{{ _("What to delete") }}</legend>
+<label class="radio"><input type="radio" name="scope" value="data" checked> {{ _("Nominee data only (keep the initiative and reset its steps)") }}</label>
+<label class="radio"><input type="radio" name="scope" value="initiative"> {{ _("Nominee data and the initiative itself") }}</label></fieldset>
+<label for="cn">{{ _h("Type the initiative's name to confirm: <strong>{name}</strong>", name=i.name) }}</label><input dir="auto" id="cn" type="text" name="confirm_name" autocomplete="off" required>
+<div class="actions"><button class="danger">{{ _("Delete permanently") }}</button></div></form>
 </details>
 {% endblock %}

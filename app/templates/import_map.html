@@ -1,18 +1,18 @@
-{% extends "base.html" %}{% block content %}
-<p><a href="/i/{{ i.id }}">← {{ i.name }}</a></p>
-<h1>Check the survey columns</h1>
-<p class="muted">{{ filename }} · {{ total }} row(s). Match each field to a column from your survey. The tool remembers these choices for next time.</p>
+{% extends "base.html" %}{% block title %}{{ _("Check the survey columns") }} · {{ _("CDP Champion Selection") }}{% endblock %}{% block content %}
+<p><a href="/i/{{ i.id }}">{{ "→" if dir == "rtl" else "←" }} {{ i.name }}</a></p>
+<h1>{{ _("Check the survey columns") }}</h1>
+<p class="muted"><bdi>{{ filename }}</bdi> · {{ _("{n} row(s). Match each field to a column from your survey. The tool remembers these choices for next time.", n=total) }}</p>
 <form method="post" action="/i/{{ i.id }}/import/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="key" value="{{ key }}">
 <div class="card"><div class="table-wrap"><table>
-<thead><tr><th>Field</th><th>Survey column</th><th>Example value</th></tr></thead><tbody>
+<thead><tr><th>{{ _("Field") }}</th><th>{{ _("Survey column") }}</th><th>{{ _("Example value") }}</th></tr></thead><tbody>
 {% for key, label, req in fields %}{% set col = mapping.get(key) %}<tr>
-<td><label for="map_{{ key }}">{{ label }}{% if req %} *{% endif %}</label></td>
-<td><select id="map_{{ key }}" name="map_{{ key }}"><option value="">— not in survey —</option>{% for h in header %}<option value="{{ h }}" {{ "selected" if h == col }}>{{ h }}</option>{% endfor %}</select></td>
+<td><label for="map_{{ key }}">{{ _(label) }}{% if req %} *{% endif %}</label></td>
+<td><select id="map_{{ key }}" name="map_{{ key }}"><option value="">{{ _("— not in survey —") }}</option>{% for h in header %}<option value="{{ h }}" {{ "selected" if h == col }}>{{ h }}</option>{% endfor %}</select></td>
 <td class="small muted">{% if col and rows %}{{ rows[0][header.index(col)][:80] }}{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
-<div class="warnbox small">Nominees without a "yes" in the consent column are imported as <strong>No Consent</strong> and won't be screened by AI until you record their consent.</div>
-<div class="actions"><button>Import {{ total }} row(s)</button><a class="btn secondary" href="/i/{{ i.id }}">Cancel</a></div></div>
+<div class="warnbox small">{{ _h("Nominees without a \"yes\" in the consent column are imported as <strong>No Consent</strong> and won't be screened by AI until you record their consent.") }}</div>
+<div class="actions"><button>{{ _("Import {n} row(s)", n=total) }}</button><a class="btn secondary" href="/i/{{ i.id }}">{{ _("Cancel") }}</a></div></div>
 </form>
-<div class="card"><h2>First rows of the file</h2><div class="table-wrap"><table class="small"><thead><tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+<div class="card"><h2>{{ _("First rows of the file") }}</h2><div class="table-wrap"><table class="small"><thead><tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr></thead>
 <tbody>{% for r in rows %}<tr>{% for v in r %}<td>{{ v[:60] }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}

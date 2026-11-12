@@ -531,3 +531,31 @@ def test_completed_steps_lock_their_actions(client):
     client.post(f"/i/{iid}/step/2", data={"csrf": csrf(client), "complete": "0"})
     r = client.post(f"/i/{iid}/import", data={"csrf": csrf(client)}, files={"file": ("n.csv", b"Nominee name,Entity\nA B,E\n")})
     assert "Check the survey columns" in r.text
+
+
+def test_lead_screens_fully_in_arabic(client):
+    """With Arabic chosen, every Change Lead page shows Arabic labels, not just a right-to-left layout."""
+    login(client)
+    client.cookies.set("lang", "ar")
+    c = db.q1("SELECT id, initiative_id FROM candidates WHERE status IN ('Assessed','Approved','Not Approved') LIMIT 1")
+    pages = {"/": ["لوحة المتابعة", "الأبطال المرشحون", "ملاءمة عالية", "حسب الجهة"],
+             f"/i/{c['initiative_id']}": ["الخطوات", "استيراد نتائج الاستبيان", "مسح البيانات المحفوظة لهذه المبادرة"],
+             f"/c/{c['id']}": ["تقييم ملاءمة السيرة الذاتية بالذكاء الاصطناعي", "رابط تقييم المرحلة الثانية", "السجلات والتاريخ"],
+             f"/c/{c['id']}/report": ["تقرير التقييم", "المرحلة الأولى: ملاءمة السيرة الذاتية", "المعيار"],
+             "/settings": ["بطاقة التقييم", "فئات الملاءمة (فرز السير الذاتية)"],
+             "/audit": ["سجل التدقيق", "الإجراء"]}
+    leftovers = ["Dashboard", "Champions nominated", "Mark complete", "Run AI fit rating", "Phase 2 assessment link",
+                 "Criterion", "Assessment scorecard", "Skip to content", "Not yet rated", "Sign out"]
+    for url, wanted in pages.items():
+        html = client.get(url).text
+        assert 'dir="rtl"' in html, url
+        for w in wanted:
+            assert w in html, (url, w)
+        visible = re.sub(r"<[^>]+>", " ", re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S))
+        for e in leftovers:
+            assert not re.search(rf"(?<![\w-]){re.escape(e)}(?![\w-])", visible), (url, e)
+    # flash messages built at run time are translated too
+    r = client.get(f"/i/{c['initiative_id']}?msg=" + "Imported 3 nominee(s); 1 duplicate(s) skipped.")
+    assert "تم استيراد 3 من المرشحين" in r.text
+    client.cookies.set("lang", "en")
+    assert "Champions nominated" in client.get("/").text

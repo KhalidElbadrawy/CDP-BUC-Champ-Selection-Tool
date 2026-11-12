@@ -5,27 +5,30 @@
 {%- endmacro %}
 {% macro fit_pill(f) -%}
 {%- set lv = FIT_LEVELS.get(f) -%}
-{%- if lv -%}<span class="fit {{ lv[1] }}" role="img" aria-label="{{ f }}: {{ lv[0] }} of 4" title="{{ f }} ({{ lv[0] }} of 4)">{{ fit_dots(f) }}<span class="fit-l">{{ lv[2] }}</span></span>
-{%- elif f -%}<span class="pill">{{ f }}</span>{%- else -%}<span class="muted small">Not yet rated</span>{%- endif -%}
+{%- if lv -%}{% set lbl = _("{f}: {n} of 4", f=_(f), n=lv[0]) %}<span class="fit {{ lv[1] }}" role="img" aria-label="{{ lbl }}" title="{{ lbl }}">{{ fit_dots(f) }}<span class="fit-l">{{ _(lv[2]) }}</span></span>
+{%- elif f -%}<span class="pill">{{ _(f) }}</span>{%- else -%}<span class="muted small">{{ _("Not yet rated") }}</span>{%- endif -%}
 {%- endmacro %}
 {% macro status_pill(s) -%}
-<span class="pill {{ {'Approved':'ok','Assessed':'info','Shortlisted':'info','Not Approved':'bad','Not Shortlisted':'bad','Withdrawn':'bad','No Consent':'warn','CV Unreadable':'warn','Follow-up Requested':'warn'}.get(s,'') }}">{{ s }}</span>
+<span class="pill {{ {'Approved':'ok','Assessed':'info','Shortlisted':'info','Not Approved':'bad','Not Shortlisted':'bad','Withdrawn':'bad','No Consent':'warn','CV Unreadable':'warn','Follow-up Requested':'warn'}.get(s,'') }}">{{ _(s) }}</span>
 {%- endmacro %}
 {% macro outcome_pill(o) -%}
-{%- if o -%}<span class="pill {{ 'ok' if o.startswith('Meets') else ('bad' if o.startswith('Does not') else 'warn') }}">{{ o }}</span>{%- else -%}<span class="muted small">—</span>{%- endif -%}
+{%- if o -%}<span class="pill {{ 'ok' if o.startswith('Meets') else ('bad' if o.startswith('Does not') else 'warn') }}">{{ _(o) }}</span>{%- else -%}<span class="muted small">—</span>{%- endif -%}
 {%- endmacro %}
 {% macro mode_pill(mode) -%}
-{% if mode == "demo" %}<span class="pill sim">SIMULATED · demo assessor</span>{% else %}<span class="pill info">AI-generated · live</span>{% endif %}
+{% if mode == "demo" %}<span class="pill sim">{{ _("SIMULATED · demo assessor") }}</span>{% else %}<span class="pill info">{{ _("AI-generated · live") }}</span>{% endif %}
 {%- endmacro %}
 {% macro score_table(result, moderation=None, detail=False) %}
 <div class="table-wrap"><table>
-<thead><tr><th>Criterion</th><th>Weight</th><th>Rating</th><th>Points</th><th>Minimum</th>{% if moderation %}<th>Moderation</th>{% endif %}</tr></thead>
+<thead><tr><th>{{ _("Criterion") }}</th><th>{{ _("Weight") }}</th><th>{{ _("Rating") }}</th><th>{{ _("Points") }}</th><th>{{ _("Minimum") }}</th>{% if moderation %}<th>{{ _("Moderation") }}</th>{% endif %}</tr></thead>
 <tbody>{% for c in result.criteria %}
-<tr><td>{{ c.name }}</td><td>{{ c.weight|round(0)|int }}%</td>
-<td>{% if c.rating is none %}<span class="pill warn">Not yet assessed</span>{% else %}{{ c.rating }}/5{% if c.rating_basis %} <span class="small muted">({{ c.rating_basis }})</span>{% endif %}{% endif %}</td>
+<tr><td>{{ _(c.name) }}</td><td>{{ c.weight|round(0)|int }}%</td>
+<td>{% if c.rating is none %}<span class="pill warn">{{ _("Not yet assessed") }}</span>{% else %}<bdi>{{ c.rating }}/5</bdi>{% if c.rating_basis %} <span class="small muted">({{ _(c.rating_basis) }})</span>{% endif %}{% endif %}</td>
 <td>{{ c.points if c.points is not none else "—" }}</td>
-<td>{% if c.minimum %}{{ c.minimum }}/5 {% if c.key in result.minimum_failures %}<span class="pill bad">below</span>{% elif c.rating is not none %}<span class="pill ok">met</span>{% endif %}{% else %}—{% endif %}</td>
-{% if moderation %}{% set m = moderation.criteria[c.key] %}<td class="small">A {{ m.pass_a if m.pass_a is not none else "–" }} · B {{ m.pass_b if m.pass_b is not none else "–" }} → <b>{{ m.resolution }}</b>{% if detail %}<br>{{ m.justification }}{% endif %}</td>{% endif %}
+<td>{% if c.minimum %}<bdi>{{ c.minimum }}/5</bdi> {% if c.key in result.minimum_failures %}<span class="pill bad">{{ _("below") }}</span>{% elif c.rating is not none %}<span class="pill ok">{{ _("met") }}</span>{% endif %}{% else %}—{% endif %}</td>
+{% if moderation %}{% set m = moderation.criteria[c.key] %}<td class="small"><bdi>A {{ m.pass_a if m.pass_a is not none else "–" }} · B {{ m.pass_b if m.pass_b is not none else "–" }}</bdi> {{ "←" if dir == "rtl" else "→" }} <b>{{ _(m.resolution) }}</b>{% if detail %}<br><bdi>{{ m.justification }}</bdi>{% endif %}</td>{% endif %}
 </tr>{% endfor %}</tbody></table></div>
-<p><strong>Score:</strong> {{ result.score_text }} · <strong>Threshold:</strong> {{ result.threshold|int }}/100 · <strong>Evidence coverage:</strong> {{ result.evidence_coverage }}</p>
+<p><strong>{{ _("Score:") }}</strong> <bdi>{{ _(result.score_text) }}</bdi> · <strong>{{ _("Threshold:") }}</strong> <bdi>{{ result.threshold|int }}/100</bdi> · <strong>{{ _("Evidence coverage:") }}</strong> {{ _(result.evidence_coverage) }}</p>
 {% endmacro %}
+{% macro file_input(name, accept, label, multiple=False) -%}
+<label class="filepick"><input type="file" name="{{ name }}" accept="{{ accept }}" {{ "multiple" if multiple }} required aria-label="{{ label }}" data-none="{{ _("No file chosen") }}" data-many="{{ _("{n} files chosen") }}"><span class="pick-btn" aria-hidden="true">{{ _("Choose files") if multiple else _("Choose file") }}</span><span class="fname">{{ _("No file chosen") }}</span></label>
+{%- endmacro %}

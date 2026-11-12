@@ -1,42 +1,42 @@
-{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}Report · {{ c.name }}{% endblock %}{% block content %}
-<p class="noprint"><a href="/c/{{ c.id }}">← {{ c.name }}</a></p>
-<h1>Assessment report: {{ c.name }}</h1>
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ _("Report") }} · {{ c.name }}{% endblock %}{% block content %}
+<p class="noprint"><a href="/c/{{ c.id }}">{{ "→" if dir == "rtl" else "←" }} {{ c.name }}</a></p>
+<h1>{{ _("Assessment report: {name}", name=c.name) }}</h1>
 <p class="muted">{{ c.ref }} · {{ c.entity_name }}{% if c.department %} · {{ c.department }}{% endif %} · {{ c.initiative_name }} · {{ c.platform or "" }}{% if c.workflow %} / {{ c.workflow }}{% endif %}</p>
-<div class="notice">This report is <strong>AI-generated and provisional</strong>{% if asmt and asmt.mode == "demo" %}, produced by the <strong>SIMULATED</strong> demo assessor, not live AI{% endif %}. Two independent AI assessments were compared by an AI moderator; agreement shows scoring consistency, not verification of CV claims. Weights and thresholds are proposed settings to calibrate in a pilot. The decision rests with the CDP Change Lead.</div>
+<div class="notice">{{ _h("This report is <strong>AI-generated and provisional</strong>") }}{% if asmt and asmt.mode == "demo" %}{{ _h(", produced by the <strong>SIMULATED</strong> demo assessor, not live AI") }}{% endif %}{{ _(". Two independent AI assessments were compared by an AI moderator; agreement shows scoring consistency, not verification of CV claims. Weights and thresholds are proposed settings to calibrate in a pilot. The decision rests with the CDP Change Lead.") }}</div>
 
 {% if asmt and asmt.result %}{% set r = asmt.result %}
-<section class="card"><h2>Summary</h2>
-<div class="grid g3"><div><div class="small muted">Recommendation</div><strong>{{ r.recommendation }}</strong></div>
-<div><div class="small muted">Assessment score</div><strong>{{ r.score_text }}</strong></div>
-<div><div class="small muted">Outcome</div>{{ m.outcome_pill(r.final_outcome or r.outcome) }}</div></div>
+<section class="card"><h2>{{ _("Summary") }}</h2>
+<div class="grid g3"><div><div class="small muted">{{ _("Recommendation") }}</div><strong>{{ _(r.recommendation) }}</strong></div>
+<div><div class="small muted">{{ _("Assessment score") }}</div><strong><bdi>{{ _(r.score_text) }}</bdi></strong></div>
+<div><div class="small muted">{{ _("Outcome") }}</div>{{ m.outcome_pill(r.final_outcome or r.outcome) }}</div></div>
 {% set strengths = r.criteria|selectattr("rating")|selectattr("rating", "ge", 4)|list %}
 {% set develop = r.criteria|selectattr("rating")|selectattr("rating", "le", 2)|list %}
-<div class="grid g2" style="margin-top:12px"><div><h3>Strengths shown</h3><ul>{% for x in strengths %}<li>{{ x.name }} ({{ x.rating }}/5)</li>{% else %}<li class="muted">None rated 4 or above.</li>{% endfor %}</ul></div>
-<div><h3>Development areas</h3><ul>{% for x in develop %}<li>{{ x.name }} ({{ x.rating }}/5)</li>{% else %}<li class="muted">None rated 2 or below.</li>{% endfor %}
-{% for x in r.criteria if x.rating is none %}<li>{{ x.name }}: not yet assessed</li>{% endfor %}</ul></div></div>
-{% if r.unsafe_serious %}<div class="warnbox">A possible safety concern was identified in: {{ r.unsafe_serious|join(", ") }}.</div>{% endif %}
+<div class="grid g2" style="margin-top:12px"><div><h3>{{ _("Strengths shown") }}</h3><ul>{% for x in strengths %}<li>{{ _(x.name) }} (<bdi>{{ x.rating }}/5</bdi>)</li>{% else %}<li class="muted">{{ _("None rated 4 or above.") }}</li>{% endfor %}</ul></div>
+<div><h3>{{ _("Development areas") }}</h3><ul>{% for x in develop %}<li>{{ _(x.name) }} (<bdi>{{ x.rating }}/5</bdi>)</li>{% else %}<li class="muted">{{ _("None rated 2 or below.") }}</li>{% endfor %}
+{% for x in r.criteria if x.rating is none %}<li>{{ _(x.name) }}: {{ _("not yet assessed") }}</li>{% endfor %}</ul></div></div>
+{% if r.unsafe_serious %}{% set areas = [] %}{% for cr in scoring.CRITERIA if cr.key in r.unsafe_serious %}{% set _x = areas.append(_(cr.name)) %}{% endfor %}<div class="warnbox">{{ _("A possible safety concern was identified in: {areas}.", areas=areas|join(_(", "))) }}</div>{% endif %}
 </section>{% endif %}
 
-<section class="card"><h2>Phase 1: CV fit</h2>
-{% if screen %}<p>{{ m.mode_pill(screen.mode) }} AI rating {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %}, changed by the Change Lead to {{ m.fit_pill(c.fit_final) }} ({{ c.fit_override_reason }}){% endif %}</p>
-<p>{{ screen.result.summary }}</p>
-<ul class="small">{% for e in screen.result.evidence %}<li><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% endfor %}</ul>
-{% if screen.result.gaps %}<p class="small">Gaps: {{ screen.result.gaps|join(" ") }}</p>{% endif %}{% else %}<p class="muted">Not rated.</p>{% endif %}
+<section class="card"><h2>{{ _("Phase 1: CV fit") }}</h2>
+{% if screen %}<p>{{ m.mode_pill(screen.mode) }} {{ _("AI rating") }} {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %}{{ _(", changed by the Change Lead to") }} {{ m.fit_pill(c.fit_final) }} (<bdi>{{ c.fit_override_reason }}</bdi>){% endif %}</p>
+<p dir="auto">{{ screen.result.summary }}</p>
+<ul class="small">{% for e in screen.result.evidence %}<li dir="auto"><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% endfor %}</ul>
+{% if screen.result.gaps %}<p class="small">{{ _("Gaps:") }} <bdi>{{ screen.result.gaps|join(" ") }}</bdi></p>{% endif %}{% else %}<p class="muted">{{ _("Not rated.") }}</p>{% endif %}
 </section>
 
-<section class="card"><h2>Phase 2: game outcome</h2>
-{% if game and game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p>LAUNCH WINDOW rank: {{ g.rank }} · Crew trust: {{ g.trust }} · Launch readiness: {{ g.ready }} · Crew members built up: {{ g.crew }} · Safety lock: {{ "overridden" if g.ending == "override" else "held" }}</p>
-{% else %}<p class="muted">{{ "Completed through the written scenarios (no game outcome)." if c.assessment_mode in ("text","offline") else "Not played." }}</p>{% endif %}
-<p class="small muted">The game outcome is shown for context only. It is not part of the assessment score.</p>
+<section class="card"><h2>{{ _("Phase 2: game outcome") }}</h2>
+{% if game and game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p>{{ _("LAUNCH WINDOW rank: {x}", x=_(g.rank)) }} · {{ _("Crew trust: {x}", x=g.trust) }} · {{ _("Launch readiness: {x}", x=g.ready) }} · {{ _("Crew members built up: {x}", x=g.crew) }} · {{ _("Safety lock: {x}", x=_("overridden") if g.ending == "override" else _("held")) }}</p>
+{% else %}<p class="muted">{{ _("Completed through the written scenarios (no game outcome).") if c.assessment_mode in ("text","offline") else _("Not played.") }}</p>{% endif %}
+<p class="small muted">{{ _("The game outcome is shown for context only. It is not part of the assessment score.") }}</p>
 </section>
 
-<section class="card"><h2>Phase 2: behavioural assessment</h2>
+<section class="card"><h2>{{ _("Phase 2: behavioural assessment") }}</h2>
 {% set detail = True %}{% include "_assessment.html" %}
-<p class="small muted">Assessment mode: {{ {"text": "written scenarios", "offline": "offline document entered by the Change Lead", "game": "LAUNCH WINDOW game"}.get(c.assessment_mode, "—") }}{% if asmt %} · evidence version {{ asmt.evidence_version }} · settings version {{ asmt.config_version }} · {{ (asmt.completed_at or asmt.created_at)[:16]|replace("T", " ") }}{% endif %}</p>
+<p class="small muted">{{ _("Assessment mode:") }} {{ _({"text": "written scenarios", "offline": "offline document entered by the Change Lead", "game": "LAUNCH WINDOW game"}.get(c.assessment_mode, "—")) }}{% if asmt %} · {{ _("evidence version {v}", v=asmt.evidence_version) }} · {{ _("settings version {v}", v=asmt.config_version) }} · <bdi>{{ (asmt.completed_at or asmt.created_at)[:16]|replace("T", " ") }}</bdi>{% endif %}</p>
 </section>
 
-<section class="card"><h2>Decision</h2>
-{% if c.decision %}<p><strong>{{ "Approved" if c.decision == "approved" else "Not approved" }}</strong> by the CDP Change Lead on {{ c.decided_at[:10] }}. Rationale: {{ c.decision_rationale }}</p>{% else %}<p class="muted">No decision recorded yet.</p>{% endif %}
+<section class="card"><h2>{{ _("Decision") }}</h2>
+{% if c.decision %}<p>{{ _h("<strong>{decision}</strong> by the CDP Change Lead on {date}.", decision=_("Approved") if c.decision == "approved" else _("Not approved"), date=c.decided_at[:10]) }} {{ _("Rationale:") }} <bdi>{{ c.decision_rationale }}</bdi></p>{% else %}<p class="muted">{{ _("No decision recorded yet.") }}</p>{% endif %}
 </section>
-<p class="noprint"><button onclick="window.print()">Print or save as PDF</button></p>
+<p class="noprint"><button onclick="window.print()">{{ _("Print or save as PDF") }}</button></p>
 {% endblock %}

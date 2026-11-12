@@ -297,3 +297,14 @@ fieldset.lockable:disabled { opacity: .38; filter: grayscale(1); pointer-events:
   border-radius: 14px; background: var(--soft-ok); border: 1px solid rgba(95,214,141,.3); }
 .locked-badge { color: var(--ok); font-weight: 700; font-size: .88rem; }
 .locked-note form { margin-inline-start: auto; }
+
+/* Arabic: tracking and capitals break up joined letters, so switch them off */
+[lang="ar"] .eyebrow, [lang="ar"] th, [lang="ar"] .brand-text small, [lang="ar"] h1, [lang="ar"] .brand { letter-spacing: 0; text-transform: none; }
+
+/* file picker with a translatable label (the browser's own button text follows the browser's language, not ours) */
+.filepick { position: relative; display: inline-flex; align-items: center; gap: 12px; max-width: 100%; cursor: pointer; }
+.filepick input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.filepick .pick-btn { flex: none; color: var(--ink); background: var(--glass-strong); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); padding: 8px 16px; }
+.filepick .fname { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
+.filepick:hover .pick-btn { border-color: var(--cdp-blue-text); }
+.filepick:focus-within .pick-btn { outline: 2px solid var(--cdp-blue-text); outline-offset: 2px; }

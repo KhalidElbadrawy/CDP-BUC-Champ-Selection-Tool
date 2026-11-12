@@ -42,7 +42,7 @@
 {% elif c.status == "Follow-up Requested" and clarifications %}
 <form method="post" action="/assess/clarify" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
 <h2>{{ _("A few follow-up questions") }}</h2><p>{{ _("Thank you for your answers. To complete your assessment, please answer these questions.") }}</p>
-{% for q in clarifications %}<fieldset><legend>{{ _("Question") }} {{ loop.index }}</legend><label for="cl_{{ q.id }}">{{ q.question }}</label><textarea id="cl_{{ q.id }}" name="cl_{{ q.id }}" required></textarea></fieldset>{% endfor %}
+{% for q in clarifications %}<fieldset><legend>{{ _("Question") }} {{ loop.index }}</legend><label for="cl_{{ q.id }}">{{ q.question }}</label><textarea dir="auto" id="cl_{{ q.id }}" name="cl_{{ q.id }}" required></textarea></fieldset>{% endfor %}
 <div class="actions"><button>{{ _("Submit") }}</button></div></form>
 
 {% else %}

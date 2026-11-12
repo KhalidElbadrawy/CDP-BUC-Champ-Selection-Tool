@@ -1,91 +1,92 @@
-{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ c.name }} · CDP Champion Selection{% endblock %}{% block content %}
-<p><a href="/i/{{ c.initiative_id }}">← {{ c.initiative_name }}</a></p>
+{% extends "base.html" %}{% import "_macros.html" as m with context %}{% block title %}{{ c.name }} · {{ _("CDP Champion Selection") }}{% endblock %}{% block content %}
+{% set back_arrow = "→" if dir == "rtl" else "←" %}
+<p><a href="/i/{{ c.initiative_id }}">{{ back_arrow }} {{ c.initiative_name }}</a></p>
 <h1>{{ c.name }} <span class="small muted">{{ c.ref }}</span></h1>
 <div class="card"><div class="grid g4">
-<div><div class="small muted">Status</div>{{ m.status_pill(c.status) }}</div>
-<div><div class="small muted">CV fit</div>{{ m.fit_pill(c.fit_final) }}</div>
-<div><div class="small muted">Assessment</div>{{ m.outcome_pill(c.outcome) }}</div>
-<div><div class="small muted">Entity</div>{{ c.entity_name }}{% if c.department %} · {{ c.department }}{% endif %}</div></div>
-{% if c.last_error %}<div class="warnbox">{{ c.last_error }}</div>{% endif %}
-<div class="actions">{% if asmt and asmt.result %}<a class="btn" href="/c/{{ c.id }}/report">Open assessment report</a>{% endif %}</div>
+<div><div class="small muted">{{ _("Status") }}</div>{{ m.status_pill(c.status) }}</div>
+<div><div class="small muted">{{ _("CV fit") }}</div>{{ m.fit_pill(c.fit_final) }}</div>
+<div><div class="small muted">{{ _("Assessment") }}</div>{{ m.outcome_pill(c.outcome) }}</div>
+<div><div class="small muted">{{ _("Entity") }}</div>{{ c.entity_name }}{% if c.department %} · {{ c.department }}{% endif %}</div></div>
+{% if c.last_error %}<div class="warnbox">{{ _(c.last_error) }}</div>{% endif %}
+<div class="actions">{% if asmt and asmt.result %}<a class="btn" href="/c/{{ c.id }}/report">{{ _("Open assessment report") }}</a>{% endif %}</div>
 </div>
 
 <div class="grid g2">
-<section class="card"><h2>Nomination</h2>
+<section class="card"><h2>{{ _("Nomination") }}</h2>
 <dl class="dl">
-<dt>Email</dt><dd>{{ c.email or "—" }}</dd><dt>Platform / workflow</dt><dd>{{ c.platform or "—" }} / {{ c.workflow or "—" }}</dd>
-<dt>Route</dt><dd>{{ c.route or "—" }}{% if c.nominator_name %} · by {{ c.nominator_name }}{% endif %}</dd>
-<dt>Line manager</dt><dd>{{ c.manager_name or "—" }}{% if c.manager_email %} ({{ c.manager_email }}){% endif %}</dd>
-<dt>Reason</dt><dd>{{ c.reason or "—" }}</dd>
-<dt>Consent to AI screening</dt><dd>{{ "Recorded" if c.consent_screening else "Not recorded" }}</dd>
-<dt>Consent before assessment</dt><dd>{{ c.consent_assessment_at[:10] if c.consent_assessment_at else "Not yet" }}</dd></dl>
+<dt>{{ _("Email") }}</dt><dd><bdi>{{ c.email or "—" }}</bdi></dd><dt>{{ _("Platform / workflow") }}</dt><dd>{{ c.platform or "—" }} / {{ c.workflow or "—" }}</dd>
+<dt>{{ _("Route") }}</dt><dd>{{ _(c.route) if c.route else "—" }}{% if c.nominator_name %} · {{ _("by {name}", name=c.nominator_name) }}{% endif %}</dd>
+<dt>{{ _("Line manager") }}</dt><dd>{{ c.manager_name or "—" }}{% if c.manager_email %} (<bdi>{{ c.manager_email }}</bdi>){% endif %}</dd>
+<dt>{{ _("Reason") }}</dt><dd dir="auto">{{ c.reason or "—" }}</dd>
+<dt>{{ _("Consent to AI screening") }}</dt><dd>{{ _("Recorded") if c.consent_screening else _("Not recorded") }}</dd>
+<dt>{{ _("Consent before assessment") }}</dt><dd>{{ c.consent_assessment_at[:10] if c.consent_assessment_at else _("Not yet") }}</dd></dl>
 {% if not c.consent_screening and c.status != "Withdrawn" %}<form method="post" action="/c/{{ c.id }}/consent"><input type="hidden" name="csrf" value="{{ csrf }}">
-<p class="small">If the nominee has agreed outside the survey (for example by email), record it here.</p><button class="small secondary">Record consent to AI screening</button></form>{% endif %}
+<p class="small">{{ _("If the nominee has agreed outside the survey (for example by email), record it here.") }}</p><button class="small secondary">{{ _("Record consent to AI screening") }}</button></form>{% endif %}
 </section>
 
-<section class="card"><h2>CV</h2>
-{% if doc %}<p><a href="/doc/{{ doc.id }}">{{ doc.filename }}</a> · {% if doc.extract_status == "ok" %}<span class="pill ok">text read</span>{% else %}<span class="pill warn">{{ doc.extract_status }}</span> {{ doc.extract_error or "" }}{% endif %}</p>{% else %}<p class="muted">No CV uploaded.</p>{% endif %}
+<section class="card"><h2>{{ _("CV") }}</h2>
+{% if doc %}<p><a href="/doc/{{ doc.id }}"><bdi>{{ doc.filename }}</bdi></a> · {% if doc.extract_status == "ok" %}<span class="pill ok">{{ _("text read") }}</span>{% else %}<span class="pill warn">{{ _(doc.extract_status) }}</span> {{ _(doc.extract_error) if doc.extract_error else "" }}{% endif %}</p>{% else %}<p class="muted">{{ _("No CV uploaded.") }}</p>{% endif %}
 <form method="post" action="/c/{{ c.id }}/cv" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="file" name="file" accept=".pdf,.docx" required aria-label="CV file"><div class="actions"><button class="small secondary">{{ "Replace CV" if doc else "Upload CV" }}</button></div></form>
-{% if c.status == "CV Uploaded" and c.consent_screening %}<form method="post" action="/c/{{ c.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">Run AI fit rating</button></form>{% endif %}
+{{ m.file_input("file", ".pdf,.docx", _("CV file")) }}<div class="actions"><button class="small secondary">{{ _("Replace CV") if doc else _("Upload CV") }}</button></div></form>
+{% if c.status == "CV Uploaded" and c.consent_screening %}<form method="post" action="/c/{{ c.id }}/screen"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">{{ _("Run AI fit rating") }}</button></form>{% endif %}
 </section></div>
 
-<section class="card"><h2>AI CV fit rating</h2>
+<section class="card"><h2>{{ _("AI CV fit rating") }}</h2>
 {% if screen %}{% set r = screen.result %}
-<p>{{ m.mode_pill(screen.mode) }} AI rating: {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %} → your rating: {{ m.fit_pill(c.fit_final) }} <span class="small">Reason: {{ c.fit_override_reason }}</span>{% endif %}</p>
-<p>{{ r.summary }}</p>
-<div class="grid g2"><div><h3>Evidence in the CV</h3><ul class="small">{% for e in r.evidence %}<li><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% else %}<li>None found.</li>{% endfor %}</ul></div>
-<div><h3>Gaps</h3><ul class="small">{% for g in r.gaps %}<li>{{ g }}</li>{% else %}<li>None noted.</li>{% endfor %}</ul>
-{% if r.phase2_focus %}<h3>What phase 2 should explore</h3><ul class="small">{% for g in r.phase2_focus %}<li>{{ g }}</li>{% endfor %}</ul>{% endif %}</div></div>
-<p class="small muted">A CV shows experience, not behaviour. This rating is a screening step; the phase 2 assessment tests behaviour.</p>
-{% if c.status in ("Shortlisted", "Not Shortlisted") %}<details><summary>Change the fit category</summary>
+<p>{{ m.mode_pill(screen.mode) }} {{ _("AI rating:") }} {{ m.fit_pill(c.fit_ai) }}{% if c.fit_override_reason %} {{ "←" if dir == "rtl" else "→" }} {{ _("your rating:") }} {{ m.fit_pill(c.fit_final) }} <span class="small">{{ _("Reason:") }} <bdi>{{ c.fit_override_reason }}</bdi></span>{% endif %}</p>
+<p dir="auto">{{ r.summary }}</p>
+<div class="grid g2"><div><h3>{{ _("Evidence in the CV") }}</h3><ul class="small">{% for e in r.evidence %}<li dir="auto"><b>{{ e.area }}</b>: “{{ e.excerpt }}”</li>{% else %}<li>{{ _("None found.") }}</li>{% endfor %}</ul></div>
+<div><h3>{{ _("Gaps") }}</h3><ul class="small">{% for g in r.gaps %}<li dir="auto">{{ g }}</li>{% else %}<li>{{ _("None noted.") }}</li>{% endfor %}</ul>
+{% if r.phase2_focus %}<h3>{{ _("What phase 2 should explore") }}</h3><ul class="small">{% for g in r.phase2_focus %}<li dir="auto">{{ g }}</li>{% endfor %}</ul>{% endif %}</div></div>
+<p class="small muted">{{ _("A CV shows experience, not behaviour. This rating is a screening step; the phase 2 assessment tests behaviour.") }}</p>
+{% if c.status in ("Shortlisted", "Not Shortlisted") %}<details><summary>{{ _("Change the fit category") }}</summary>
 <form method="post" action="/c/{{ c.id }}/fit" class="grid g3"><input type="hidden" name="csrf" value="{{ csrf }}">
-<div><label for="cat">Fit category</label><select id="cat" name="category">{% for f in scoring.FIT_CATEGORIES %}<option {{ "selected" if f == c.fit_final }}>{{ f }}</option>{% endfor %}</select></div>
-<div><label for="rs">Reason *</label><input id="rs" type="text" name="reason" required></div><div><button class="secondary">Save category</button></div></form></details>{% endif %}
-{% else %}<p class="muted">Not yet rated.</p>{% endif %}
+<div><label for="cat">{{ _("Fit category") }}</label><select id="cat" name="category">{% for f in scoring.FIT_CATEGORIES %}<option value="{{ f }}" {{ "selected" if f == c.fit_final }}>{{ _(f) }}</option>{% endfor %}</select></div>
+<div><label for="rs">{{ _("Reason *") }}</label><input dir="auto" id="rs" type="text" name="reason" required></div><div><button class="secondary">{{ _("Save category") }}</button></div></form></details>{% endif %}
+{% else %}<p class="muted">{{ _("Not yet rated.") }}</p>{% endif %}
 </section>
 
-<section class="card" id="link"><h2>Phase 2 assessment link</h2>
-{% if new_link %}<div class="notice"><strong>New personal link</strong> (shown only now; copy it into your email):
-<div class="copyrow"><input id="nl" type="text" readonly value="{{ new_link }}" aria-label="Assessment link"><button type="button" class="small" onclick="navigator.clipboard.writeText(document.getElementById('nl').value).then(()=>this.textContent='Copied',()=>document.getElementById('nl').select())">Copy</button></div></div>{% endif %}
-{% if link %}<p class="small">Active link ending …{{ link.raw_hint }} · expires {{ link.expires_at[:10] }}{% if link.last_used_at %} · last opened {{ link.last_used_at[:10] }}{% endif %}</p>{% endif %}
+<section class="card" id="link"><h2>{{ _("Phase 2 assessment link") }}</h2>
+{% if new_link %}<div class="notice">{{ _h("<strong>New personal link</strong> (shown only now; copy it into your email):") }}
+<div class="copyrow"><input id="nl" type="text" dir="ltr" readonly value="{{ new_link }}" aria-label="{{ _("Assessment link") }}"><button type="button" class="small" data-copied="{{ _("Copied") }}" onclick="navigator.clipboard.writeText(document.getElementById('nl').value).then(()=>this.textContent=this.dataset.copied,()=>document.getElementById('nl').select())">{{ _("Copy") }}</button></div></div>{% endif %}
+{% if link %}<p class="small">{{ _("Active link ending …{hint} · expires {date}", hint=link.raw_hint, date=link.expires_at[:10]) }}{% if link.last_used_at %} · {{ _("last opened {date}", date=link.last_used_at[:10]) }}{% endif %}</p>{% endif %}
 {% if c.status in wf.INVITABLE %}<div class="actions">
-<form method="post" action="/c/{{ c.id }}/link"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">{{ "Create a new link" if link else "Create link" }}</button></form>
-{% if link %}<form method="post" action="/c/{{ c.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">Cancel link</button></form>{% endif %}</div>
-<form method="post" action="/c/{{ c.id }}/time" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="xt" class="small">Extra time for the timed game (reasonable adjustment)</label>
-<select id="xt" name="factor" style="max-width:120px">{% for f in [1.0, 1.25, 1.5, 2.0] %}<option value="{{ f }}" {{ "selected" if c.extra_time == f }}>{{ f }}×</option>{% endfor %}</select><button class="small secondary">Save</button></form>
-{% else %}<p class="muted small">Links are available once the candidate is shortlisted.</p>{% endif %}
+<form method="post" action="/c/{{ c.id }}/link"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">{{ _("Create a new link") if link else _("Create link") }}</button></form>
+{% if link %}<form method="post" action="/c/{{ c.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">{{ _("Cancel link") }}</button></form>{% endif %}</div>
+<form method="post" action="/c/{{ c.id }}/time" class="actions"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="xt" class="small">{{ _("Extra time for the timed game (reasonable adjustment)") }}</label>
+<select id="xt" name="factor" style="max-width:120px">{% for f in [1.0, 1.25, 1.5, 2.0] %}<option value="{{ f }}" {{ "selected" if c.extra_time == f }}>{{ f }}×</option>{% endfor %}</select><button class="small secondary">{{ _("Save") }}</button></form>
+{% else %}<p class="muted small">{{ _("Links are available once the candidate is shortlisted.") }}</p>{% endif %}
 </section>
 
-<section class="card"><h2>Assessment</h2>
-<p class="small">Mode: {{ {"game": "LAUNCH WINDOW game", "text": "written version", "offline": "offline document"}.get(c.assessment_mode, "not chosen yet") }}</p>
-{% if game %}{% set gs = game.state_json|fromjson %}<p class="small">Game: {{ "finished" if game.completed_at else {"intro": "not started", "prologue": "prologue", "act1": "Act I · briefing", "act2": "Act II · crew rounds", "act3": "Act III · anomaly", "act4": "Act IV · final checks", "epilogue": "handover", "launch": "launch", "realwork": "real-work questions"}.get(gs.phase, "in progress") }}
-{% if gs.extra_time and gs.extra_time > 1 %} · extra time {{ gs.extra_time }}×{% endif %} · {{ (game.events_json|fromjson)|length }} moves recorded{% if gs.end_reason == "time" %} · ended by the clock{% endif %}</p>
-{% if game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p class="small">Game outcome (not part of the score): rank {{ g.rank }} · crew trust {{ g.trust }} · launch readiness {{ g.ready }} · crew built {{ g.crew }} · safety lock {{ "overridden" if g.ending == "override" else "held" }}</p>{% endif %}
+<section class="card"><h2>{{ _("Assessment") }}</h2>
+<p class="small">{{ _("Mode:") }} {{ _({"game": "LAUNCH WINDOW game", "text": "written version", "offline": "offline document"}.get(c.assessment_mode, "not chosen yet")) }}</p>
+{% if game %}{% set gs = game.state_json|fromjson %}<p class="small">{{ _("Game:") }} {{ _("finished") if game.completed_at else _({"intro": "not started", "prologue": "prologue", "act1": "Act I · briefing", "act2": "Act II · crew rounds", "act3": "Act III · anomaly", "act4": "Act IV · final checks", "epilogue": "handover", "launch": "launch", "realwork": "real-work questions"}.get(gs.phase, "in progress")) }}
+{% if gs.extra_time and gs.extra_time > 1 %} · {{ _("extra time {x}×", x=gs.extra_time) }}{% endif %} · {{ _("{n} moves recorded", n=(game.events_json|fromjson)|length) }}{% if gs.end_reason == "time" %} · {{ _("ended by the clock") }}{% endif %}</p>
+{% if game.outcome_json %}{% set g = game.outcome_json|fromjson %}<p class="small">{{ _("Game outcome (not part of the score):") }} {{ _("rank {x}", x=_(g.rank)) }} · {{ _("crew trust {x}", x=g.trust) }} · {{ _("launch readiness {x}", x=g.ready) }} · {{ _("crew built {x}", x=g.crew) }} · {{ _("safety lock {x}", x=_("overridden") if g.ending == "override" else _("held")) }}</p>{% endif %}
 {% if c.status in ("Invited", "In Assessment") and not game.completed_at %}<form method="post" action="/c/{{ c.id }}/reset-game"><input type="hidden" name="csrf" value="{{ csrf }}">
-<p class="small muted">If the candidate had a technical problem, you can discard the unfinished game so they can restart or use the written version.</p><button class="small secondary">Reset unfinished game</button></form>{% endif %}{% endif %}
+<p class="small muted">{{ _("If the candidate had a technical problem, you can discard the unfinished game so they can restart or use the written version.") }}</p><button class="small secondary">{{ _("Reset unfinished game") }}</button></form>{% endif %}{% endif %}
 {% set detail = False %}{% include "_assessment.html" %}
-{% if c.status == "Assessing" %}<p class="small">AI assessment in progress.</p><form method="post" action="/c/{{ c.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">Retry AI assessment</button></form>{% endif %}
-{% if clarifications %}<details><summary>Follow-up questions ({{ clarifications|length }})</summary><ul class="small">{% for q in clarifications %}<li>Round {{ q.round_no }} · {{ q.criterion }} · {{ q.kind }}: {{ q.question }}<br><em>{{ q.response or "Awaiting answer" }}</em></li>{% endfor %}</ul></details>{% endif %}
-{% if c.status in wf.INVITABLE %}<details><summary>Enter answers from the offline document</summary>
-<p class="small muted">For candidates who could not use the link: paste their written answers to the LAUNCH WINDOW written scenarios. They are assessed the same way.</p>
+{% if c.status == "Assessing" %}<p class="small">{{ _("AI assessment in progress.") }}</p><form method="post" action="/c/{{ c.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">{{ _("Retry AI assessment") }}</button></form>{% endif %}
+{% if clarifications %}<details><summary>{{ _("Follow-up questions ({n})", n=clarifications|length) }}</summary><ul class="small">{% for q in clarifications %}<li>{% set crn = scoring.CRITERIA|selectattr("key", "equalto", q.criterion)|first %}{{ _("Round {n}", n=q.round_no) }} · {{ _(crn.name) if crn else q.criterion }} · {{ _(q.kind) }}: <bdi>{{ q.question }}</bdi><br><em dir="auto">{{ q.response or _("Awaiting answer") }}</em></li>{% endfor %}</ul></details>{% endif %}
+{% if c.status in wf.INVITABLE %}<details><summary>{{ _("Enter answers from the offline document") }}</summary>
+<p class="small muted">{{ _("For candidates who could not use the link: paste their written answers to the LAUNCH WINDOW written scenarios. They are assessed the same way.") }}</p>
 <form method="post" action="/c/{{ c.id }}/offline"><input type="hidden" name="csrf" value="{{ csrf }}">{% include "_scenario_fields.html" %}
-<div class="actions"><button>Save and assess</button></div></form></details>{% endif %}
+<div class="actions"><button>{{ _("Save and assess") }}</button></div></form></details>{% endif %}
 </section>
 
-{% if c.status in ("Assessed", "Approved", "Not Approved") %}<section class="card"><h2>Decision</h2>
-{% if c.decision %}<p>{{ "Approved" if c.decision == "approved" else "Not approved" }} on {{ c.decided_at[:10] }}: {{ c.decision_rationale }}</p>{% endif %}
+{% if c.status in ("Assessed", "Approved", "Not Approved") %}<section class="card"><h2>{{ _("Decision") }}</h2>
+{% if c.decision %}<p>{{ _("{decision} on {date}:", decision=_("Approved") if c.decision == "approved" else _("Not approved"), date=c.decided_at[:10]) }} <bdi>{{ c.decision_rationale }}</bdi></p>{% endif %}
 <form method="post" action="/c/{{ c.id }}/decide"><input type="hidden" name="csrf" value="{{ csrf }}">
-<fieldset><legend>Decision</legend><label class="radio"><input type="radio" name="decision" value="approved" required {{ "checked" if c.decision == "approved" }}> Approve as champion</label>
-<label class="radio"><input type="radio" name="decision" value="not_approved" {{ "checked" if c.decision == "not_approved" }}> Not approve</label></fieldset>
-<label for="ra">Rationale *</label><textarea id="ra" name="rationale" required style="min-height:70px">{{ c.decision_rationale or "" }}</textarea>
-<div class="actions"><button>{{ "Update decision" if c.decision else "Record decision" }}</button></div></form></section>{% endif %}
+<fieldset><legend>{{ _("Decision") }}</legend><label class="radio"><input type="radio" name="decision" value="approved" required {{ "checked" if c.decision == "approved" }}> {{ _("Approve as champion") }}</label>
+<label class="radio"><input type="radio" name="decision" value="not_approved" {{ "checked" if c.decision == "not_approved" }}> {{ _("Not approve") }}</label></fieldset>
+<label for="ra">{{ _("Rationale *") }}</label><textarea dir="auto" id="ra" name="rationale" required style="min-height:70px">{{ c.decision_rationale or "" }}</textarea>
+<div class="actions"><button>{{ _("Update decision") if c.decision else _("Record decision") }}</button></div></form></section>{% endif %}
 
-<details class="card"><summary>Records and history</summary>
+<details class="card"><summary>{{ _("Records and history") }}</summary>
 <div class="grid g2">
-{% if c.status != "Withdrawn" %}<form method="post" action="/c/{{ c.id }}/withdraw"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="wr">Withdraw candidate</label><input id="wr" type="text" name="reason" placeholder="Reason" required><div class="actions"><button class="small danger">Withdraw</button></div></form>{% endif %}
-<form method="post" action="/c/{{ c.id }}/delete-docs"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="dr">Delete CV and stored evidence</label><input id="dr" type="text" name="reason" placeholder="Reason" required><div class="actions"><button class="small danger">Delete documents</button></div></form></div>
-{% if source %}<h3>Original survey row</h3><dl class="dl small">{% for k, v in source.items() if v %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
-<h3>Audit trail</h3><div class="table-wrap"><table class="small"><tbody>{% for e in audit %}<tr><td>{{ e.at[:16]|replace("T"," ") }}</td><td>{{ e.action }}</td><td>{{ e.actor }}</td><td>{{ e.detail_json }}</td></tr>{% endfor %}</tbody></table></div>
+{% if c.status != "Withdrawn" %}<form method="post" action="/c/{{ c.id }}/withdraw"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="wr">{{ _("Withdraw candidate") }}</label><input dir="auto" id="wr" type="text" name="reason" placeholder="{{ _("Reason") }}" required><div class="actions"><button class="small danger">{{ _("Withdraw") }}</button></div></form>{% endif %}
+<form method="post" action="/c/{{ c.id }}/delete-docs"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="dr">{{ _("Delete CV and stored evidence") }}</label><input dir="auto" id="dr" type="text" name="reason" placeholder="{{ _("Reason") }}" required><div class="actions"><button class="small danger">{{ _("Delete documents") }}</button></div></form></div>
+{% if source %}<h3>{{ _("Original survey row") }}</h3><dl class="dl small">{% for k, v in source.items() if v %}<dt dir="auto">{{ k }}</dt><dd dir="auto">{{ v }}</dd>{% endfor %}</dl>{% endif %}
+<h3>{{ _("Audit trail") }}</h3><div class="table-wrap"><table class="small"><tbody>{% for e in audit %}<tr><td><bdi>{{ e.at[:16]|replace("T"," ") }}</bdi></td><td><bdi dir="ltr">{{ e.action }}</bdi></td><td>{{ _(e.actor) }}</td><td><bdi dir="ltr">{{ e.detail_json }}</bdi></td></tr>{% endfor %}</tbody></table></div>
 </details>
 {% endblock %}

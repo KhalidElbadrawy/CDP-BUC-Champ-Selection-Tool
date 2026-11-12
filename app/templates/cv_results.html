@@ -1,17 +1,17 @@
-{% extends "base.html" %}{% block content %}
-<p><a href="/i/{{ i.id }}">← {{ i.name }}</a></p>
-<h1>CV upload results</h1>
-<div class="card"><h2>Matched ({{ done|length }})</h2>
-<div class="table-wrap"><table><thead><tr><th>File</th><th>Nominee</th><th>Result</th></tr></thead><tbody>
-{% for d in done %}<tr><td class="small">{{ d.file }}</td><td>{{ d.name }}</td><td>{% if d.status == "ok" %}<span class="pill ok">text read</span>{% else %}<span class="pill warn">{{ d.status }}</span> <span class="small">{{ d.error }}</span>{% endif %}</td></tr>
-{% else %}<tr><td colspan="3">None.</td></tr>{% endfor %}</tbody></table></div></div>
+{% extends "base.html" %}{% block title %}{{ _("CV upload results") }} · {{ _("CDP Champion Selection") }}{% endblock %}{% block content %}
+<p><a href="/i/{{ i.id }}">{{ "→" if dir == "rtl" else "←" }} {{ i.name }}</a></p>
+<h1>{{ _("CV upload results") }}</h1>
+<div class="card"><h2>{{ _("Matched ({n})", n=done|length) }}</h2>
+<div class="table-wrap"><table><thead><tr><th>{{ _("File") }}</th><th>{{ _("Nominee") }}</th><th>{{ _("Result") }}</th></tr></thead><tbody>
+{% for d in done %}<tr><td class="small"><bdi>{{ d.file }}</bdi></td><td>{{ d.name }}</td><td>{% if d.status == "ok" %}<span class="pill ok">{{ _("text read") }}</span>{% else %}<span class="pill warn">{{ _(d.status) }}</span> <span class="small">{{ _(d.error) if d.error else "" }}</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="3">{{ _("None.") }}</td></tr>{% endfor %}</tbody></table></div></div>
 {% if unmatched %}<form method="post" action="/i/{{ i.id }}/cvs/assign" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
-<h2>Choose the nominee for these files ({{ unmatched|length }})</h2>
-{% if not people %}<div class="flash err">This initiative has no nominees yet. Import the survey results (step 2) first, then upload the CVs again.</div>
-{% else %}<p>These files could not be matched with certainty. <strong>Pick the right nominee for each file</strong>, then click <em>Assign CVs</em>. Suggested matches are pre-selected; check them.</p>{% endif %}
-<div class="table-wrap"><table><thead><tr><th>File</th><th>Nominee</th></tr></thead><tbody>
-{% for u in unmatched %}<tr><td class="small">{{ u.file }}<input type="hidden" name="name_{{ u.key }}" value="{{ u.file }}"></td>
-<td><select name="assign_{{ u.key }}" aria-label="Nominee for {{ u.file }}"><option value="">— skip this file —</option>{% for p in people %}<option value="{{ p.id }}" {{ "selected" if p.id == u.suggest }}>{{ p.name }}{{ " (suggested)" if p.id == u.suggest }}</option>{% endfor %}</select></td></tr>{% endfor %}
-</tbody></table></div><div class="actions"><button>Assign CVs</button></div></form>{% endif %}
-<p><a class="btn" href="/i/{{ i.id }}">Back to the initiative</a></p>
+<h2>{{ _("Choose the nominee for these files ({n})", n=unmatched|length) }}</h2>
+{% if not people %}<div class="flash err">{{ _("This initiative has no nominees yet. Import the survey results (step 2) first, then upload the CVs again.") }}</div>
+{% else %}<p>{{ _h("These files could not be matched with certainty. <strong>Pick the right nominee for each file</strong>, then click <em>Assign CVs</em>. Suggested matches are pre-selected; check them.") }}</p>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>{{ _("File") }}</th><th>{{ _("Nominee") }}</th></tr></thead><tbody>
+{% for u in unmatched %}<tr><td class="small"><bdi>{{ u.file }}</bdi><input type="hidden" name="name_{{ u.key }}" value="{{ u.file }}"></td>
+<td><select name="assign_{{ u.key }}" aria-label="{{ _("Nominee for {file}", file=u.file) }}"><option value="">{{ _("— skip this file —") }}</option>{% for p in people %}<option value="{{ p.id }}" {{ "selected" if p.id == u.suggest }}>{{ p.name }}{{ _(" (suggested)") if p.id == u.suggest }}</option>{% endfor %}</select></td></tr>{% endfor %}
+</tbody></table></div><div class="actions"><button>{{ _("Assign CVs") }}</button></div></form>{% endif %}
+<p><a class="btn" href="/i/{{ i.id }}">{{ _("Back to the initiative") }}</a></p>
 {% endblock %}
